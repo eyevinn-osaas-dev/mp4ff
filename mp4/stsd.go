@@ -20,16 +20,26 @@ type StsdBox struct {
 	AvcX *VisualSampleEntryBox
 	// HvcX is a pointer to a box with name hvc1 or hev1
 	HvcX *VisualSampleEntryBox
-	// Mp4a is a pointer to to a box with name mp4a
+	// Av01 is a pointer to a box with name av01
+	Av01 *VisualSampleEntryBox
+	// Encv is a pointer to a box with name encv
+	Encv *VisualSampleEntryBox
+	// VpXX is a pointer to a box with name vp08 or vp09 (VP8 or VP9 video)
+	VpXX *VisualSampleEntryBox
+	// Mp4a is a pointer to a box with name mp4a
 	Mp4a *AudioSampleEntryBox
 	// AC3 is a pointer to a box with name ac-3
 	AC3 *AudioSampleEntryBox
 	// EC3 is a pointer to a box with name ec-3
 	EC3 *AudioSampleEntryBox
+	// Enca is a pointer to a box with name enca
+	Enca *AudioSampleEntryBox
 	// Wvtt is a pointer to a WvttBox
 	Wvtt *WvttBox
 	// Stpp is a pointer to a StppBox
-	Stpp     *StppBox
+	Stpp *StppBox
+	// Evte is a pointer to an EvteBox
+	Evte     *EvteBox
 	Children []Box
 }
 
@@ -45,43 +55,29 @@ func (s *StsdBox) AddChild(box Box) {
 		s.AvcX = box.(*VisualSampleEntryBox)
 	case "hvc1", "hev1":
 		s.HvcX = box.(*VisualSampleEntryBox)
+	case "encv":
+		s.Encv = box.(*VisualSampleEntryBox)
+	case "av01":
+		s.Av01 = box.(*VisualSampleEntryBox)
+	case "vp08", "vp09":
+		s.VpXX = box.(*VisualSampleEntryBox)
 	case "mp4a":
 		s.Mp4a = box.(*AudioSampleEntryBox)
 	case "ac-3":
 		s.AC3 = box.(*AudioSampleEntryBox)
 	case "ec-3":
 		s.EC3 = box.(*AudioSampleEntryBox)
+	case "enca":
+		s.Enca = box.(*AudioSampleEntryBox)
 	case "wvtt":
 		s.Wvtt = box.(*WvttBox)
 	case "stpp":
 		s.Stpp = box.(*StppBox)
+	case "evte":
+		s.Evte = box.(*EvteBox)
 	}
 	s.Children = append(s.Children, box)
 	s.SampleCount++
-}
-
-// ReplaceChild - Replace a child box with one of the same type
-func (s *StsdBox) ReplaceChild(box Box) {
-	switch box.(type) {
-	case *VisualSampleEntryBox:
-		for i, b := range s.Children {
-			switch b.(type) {
-			case *VisualSampleEntryBox:
-				s.Children[i] = box.(*VisualSampleEntryBox)
-				s.AvcX = box.(*VisualSampleEntryBox)
-			}
-		}
-	case *AudioSampleEntryBox:
-		for i, b := range s.Children {
-			switch b.(type) {
-			case *AudioSampleEntryBox:
-				s.Children[i] = box.(*AudioSampleEntryBox)
-				s.Mp4a = box.(*AudioSampleEntryBox)
-			}
-		}
-	default:
-		panic("Cannot handle box type")
-	}
 }
 
 // GetSampleDescription - get one of multiple descriptions
@@ -218,4 +214,23 @@ func (s *StsdBox) Info(w io.Writer, specificBoxLevels, indent, indentStep string
 		}
 	}
 	return err
+}
+
+// GetBtrt returns the first BtrtBox found in StsdBox children.
+func (s *StsdBox) GetBtrt() *BtrtBox {
+	for _, c := range s.Children {
+		switch child := c.(type) {
+		case *VisualSampleEntryBox:
+			return child.Btrt
+		case *AudioSampleEntryBox:
+			return child.Btrt
+		case *WvttBox:
+			return child.Btrt
+		case *StppBox:
+			return child.Btrt
+		case *EvteBox:
+			return child.Btrt
+		}
+	}
+	return nil
 }

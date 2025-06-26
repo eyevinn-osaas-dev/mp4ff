@@ -3,44 +3,44 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
+	"path"
 
 	"github.com/Eyevinn/mp4ff/bits"
 	"github.com/Eyevinn/mp4ff/mp4"
 )
 
 func main() {
+	if err := run("."); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(outDir string) error {
 	trackIDs := []uint32{1, 2}
 	initSegFiles := []string{"testdata/V300/init.mp4", "testdata/A48/init.mp4"}
 	combinedInitSeg, err := combineInitSegments(initSegFiles, trackIDs)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
-	err = writeSeg(combinedInitSeg, "combined-init.mp4")
+	err = writeSeg(combinedInitSeg, path.Join(outDir, "combined-init.mp4"))
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	mediaSegFiles := []string{"testdata/V300/1.m4s", "testdata/A48/1.m4s"}
 	combinedMediaSeg, err := combineMediaSegments(mediaSegFiles, trackIDs)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
-	err = writeSeg(combinedMediaSeg, "combined-1.m4s")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	return writeSeg(combinedMediaSeg, path.Join(outDir, "combined-1.m4s"))
 }
 
 func combineInitSegments(files []string, newTrackIDs []uint32) (*mp4.InitSegment, error) {
 	var combinedInit *mp4.InitSegment
 	for i := 0; i < len(files); i++ {
-		data, err := ioutil.ReadFile(files[i])
+		data, err := os.ReadFile(files[i])
 		if err != nil {
 			return nil, fmt.Errorf("failed to read init segment: %w", err)
 		}
@@ -78,7 +78,7 @@ func combineMediaSegments(files []string, newTrackIDs []uint32) (*mp4.MediaSegme
 	var combinedSeg *mp4.MediaSegment
 	var outFrag *mp4.Fragment
 	for i := 0; i < len(files); i++ {
-		data, err := ioutil.ReadFile(files[i])
+		data, err := os.ReadFile(files[i])
 		if err != nil {
 			return nil, fmt.Errorf("failed to read media segment: %w", err)
 		}
@@ -120,7 +120,7 @@ func combineMediaSegments(files []string, newTrackIDs []uint32) (*mp4.MediaSegme
 			return nil, fmt.Errorf("failed to get full samples: %w", err)
 		}
 		for _, fs := range fss {
-			outFrag.AddFullSampleToTrack(fs, newTrackIDs[i])
+			_ = outFrag.AddFullSampleToTrack(fs, newTrackIDs[i])
 		}
 	}
 	return combinedSeg, nil

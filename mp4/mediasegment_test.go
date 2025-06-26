@@ -1,18 +1,18 @@
-package mp4
+package mp4_test
 
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 
+	"github.com/Eyevinn/mp4ff/mp4"
 	"github.com/go-test/deep"
 )
 
 func TestMediaSegmentFragmentation(t *testing.T) {
 
-	trex := &TrexBox{
+	trex := &mp4.TrexBox{
 		TrackID: 2,
 	}
 
@@ -26,7 +26,7 @@ func TestMediaSegmentFragmentation(t *testing.T) {
 	}
 	defer fd.Close()
 
-	f, err := DecodeFile(fd)
+	f, err := mp4.DecodeFile(fd)
 	if err != io.EOF && err != nil {
 		t.Error(err)
 	}
@@ -35,14 +35,14 @@ func TestMediaSegmentFragmentation(t *testing.T) {
 	}
 
 	var bufInSeg bytes.Buffer
-	f.EncOptimize = OptimizeNone // Avoid trun optimization
-	f.FragEncMode = EncModeBoxTree
+	f.EncOptimize = mp4.OptimizeNone // Avoid trun optimization
+	f.FragEncMode = mp4.EncModeBoxTree
 	err = f.Encode(&bufInSeg)
 	if err != nil {
 		t.Error(err)
 	}
 
-	inSeg, err := ioutil.ReadFile(inFile)
+	inSeg, err := os.ReadFile(inFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +71,8 @@ func TestMediaSegmentFragmentation(t *testing.T) {
 	}
 
 	var bufFrag bytes.Buffer
-	fragmentedSegment := NewMediaSegment()
-	fragmentedSegment.EncOptimize = OptimizeTrun
+	fragmentedSegment := mp4.NewMediaSegment()
+	fragmentedSegment.EncOptimize = mp4.OptimizeTrun
 	fragmentedSegment.Styp = f.Segments[0].Styp
 	fragmentedSegment.Fragments = fragments
 
@@ -92,7 +92,7 @@ func TestMediaSegmentFragmentation(t *testing.T) {
 			t.Error(err)
 		}
 	} else {
-		goldenFrag, err := ioutil.ReadFile(goldenFragPath)
+		goldenFrag, err := os.ReadFile(goldenFragPath)
 		if err != nil {
 			t.Error(err)
 		}
@@ -112,9 +112,9 @@ func TestDoubleDecodeEncodeOptimize(t *testing.T) {
 	}
 	defer fd.Close()
 
-	enc1 := decodeEncode(t, fd, OptimizeTrun)
+	enc1 := decodeEncode(t, fd, mp4.OptimizeTrun)
 	buf1 := bytes.NewBuffer(enc1)
-	enc2 := decodeEncode(t, buf1, OptimizeTrun)
+	enc2 := decodeEncode(t, buf1, mp4.OptimizeTrun)
 	diff := deep.Equal(enc2, enc1)
 	if diff != nil {
 		t.Errorf("Second write gives diff %s", diff)
@@ -125,20 +125,20 @@ func TestDecodeEncodeNoOptimize(t *testing.T) {
 
 	inFile := "testdata/1.m4s"
 
-	data, err := ioutil.ReadFile(inFile)
+	data, err := os.ReadFile(inFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	buf0 := bytes.NewBuffer(data)
-	enc := decodeEncode(t, buf0, OptimizeNone)
+	enc := decodeEncode(t, buf0, mp4.OptimizeNone)
 	diff := deep.Equal(enc, data)
 	if diff != nil {
 		t.Errorf("First encode gives diff %s", diff)
 	}
 }
 
-func decodeEncode(t *testing.T, r io.Reader, optimize EncOptimize) []byte {
-	f, err := DecodeFile(r)
+func decodeEncode(t *testing.T, r io.Reader, optimize mp4.EncOptimize) []byte {
+	f, err := mp4.DecodeFile(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,19 +162,19 @@ func TestMoofEncrypted(t *testing.T) {
 	}
 	defer fd.Close()
 
-	f, err := DecodeFile(fd)
+	f, err := mp4.DecodeFile(fd)
 	if err != io.EOF && err != nil {
 		t.Error(err)
 	}
 
 	var bufOut bytes.Buffer
-	f.FragEncMode = EncModeBoxTree
+	f.FragEncMode = mp4.EncModeBoxTree
 	err = f.Encode(&bufOut)
 	if err != nil {
 		t.Error(err)
 	}
 
-	inSeg, err := ioutil.ReadFile(inFile)
+	inSeg, err := os.ReadFile(inFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,18 +197,18 @@ func TestMoofEncrypted(t *testing.T) {
 }
 
 func TestDecodeEncodeCencFragmentedFile(t *testing.T) {
-	inData, err := ioutil.ReadFile("testdata/prog_8s_enc_dashinit.mp4")
+	inData, err := os.ReadFile("testdata/prog_8s_enc_dashinit.mp4")
 	if err != nil {
 		t.Fatal(err)
 	}
 	inBuf := bytes.NewBuffer(inData)
-	decFile, err := DecodeFile(inBuf)
+	decFile, err := mp4.DecodeFile(inBuf)
 	if err != nil {
 		t.Error(err)
 	}
 	outSlice := make([]byte, 0, len(inData))
 	outBuf := bytes.NewBuffer(outSlice)
-	decFile.FragEncMode = EncFragFileMode(EncModeBoxTree)
+	decFile.FragEncMode = mp4.EncFragFileMode(mp4.EncModeBoxTree)
 	err = decFile.Encode(outBuf)
 	if err != nil {
 		t.Error(err)
@@ -236,11 +236,11 @@ func TestCommonSampleDuration(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer fd.Close()
-		f, err := DecodeFile(fd)
+		f, err := mp4.DecodeFile(fd)
 		if err != nil {
 			t.Fatal(err)
 		}
-		trex := &TrexBox{
+		trex := &mp4.TrexBox{
 			TrackID: c.trackID,
 		}
 		for _, s := range f.Segments {

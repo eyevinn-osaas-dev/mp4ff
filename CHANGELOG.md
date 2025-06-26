@@ -3,13 +3,186 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
 ### Added
 
+- NewPsshBox function
+
+### Changed
+
+* `mp4.DecodeFile` can return a partially decoded file with an error
+* `mp4ff-info` may print a partially parsed box tree together with an error
+
+### Fixed
+
+- Handle multi-segment files with sidx without styp #430
+
+## [0.48.0] - 2025-03-28
+
+### Changed
+
+- mp4.NewUUIDFromHex() changed to more general mp4.NewUUIDFromString()
+- cmd/mp4ff-decrypt -key option instead of -k. Takes hex or base64 value
+- cmd/mp4ff-encrypt -key and -kid options now take hex or base64 values
+- Replaced mp4.AlouBox and mp4.TlouBox with a common mp4.LoudnessBaseBox
+- mp4.Measurement changed to clearer mp4.LoudnessMeasurement
+
+### Added
+
+- mp4.SetUUID() can take base64 string as well as hex-encoded.
+- Support for weird dac3 box with initial 4 zero bytes (#395)
+- Lots of fuzzying tests and changes to avoid panic on bad input data
+- Support for SMPTE-2086 Mastering Display Metadata Box (SmDm)
+- Support for Content Light Level Box (CoLL)
+- Better test coverage for VisualSampleEntryBox
+- IsVideoNaluType functions in both avc and hevc packages
+- Exported constants for ColrBox's ColorType
+- mp4.NewFreeBox, mp4.NewSkipBox functions
+- mp4.FreeBox.Payload method
+- mp4.SencBox methods: SetPerSampleIVSize, PerSampleIVSize, and ReadButNotParsed
+- Function mp4.CreateUnknownBox
+- Functions mp4.NewTfrfBox and mp4.NewTfxdBox
+- HEVC (hvc1) encryption
+- AppendProtectRange function is now public
+- Tfhd bit masks are now public (#423)
+- Skip bytes support for AVCDecoderConfigurationRecord (#420)
+
+### Fixed
+
+- Support short ESDS without SLConfig descriptor (issue #393)
+- HEVC Slice Header CollocatedFromL0Flag should be true by default
+- Update to golangci-lint/v2 and fixed all warnings
+- Remove more boxes when decrypting files (pr #424)
+
+## [0.47.0] - 2024-11-12
+
+### Changed
+
+- CreatePrftBox now takes flags parameter
+- PrftBox Info output
+- Removed ReplaceChild method of StsdBox
+- CreateHdlr name for timed metadata
+- extension .m4s is interpreted as MP4 file in mp4ff-pslister
+- moved mp4.GetVersion() to internal.GetVersion()
+
+### Added
+
+- NTP64 struct with methods to convert to time.Time
+- Constants for PrftBox flags
+- Unittest to all programs in [cmd](cmd) and [examples](examples).
+- Documentation in doc.go files for all packages
+
+### Fixed
+
+- Allow missing optional DecoderSpecificInfo
+- Avoid mp4.File.Mdat pointing to an empty mdat box
+- `cmd/mp4ff-encrypt` did not parse command line
+- `SeigSampleGroupEntry` calculated skipBytes incorrectly
+- `cmd/mp4ff-pslister` did not parse annex B HEVC correctly
+- error when decrypting and re-encrypting a segement (issue #378)
+
+### Removed
+
+- Too specific functions DumpWithSampleData and Fragment.DumpSampleData
+
+## [0.46.0] - 2024-08-08
+
+### Fixed
+
+- mvhd, tkhd, and mdhd timestamps were off by one day
+- allow other sbgp and sgpd types than seig with senc
+
+### Added
+
+- mvhd, tkhd, and mdhd methods to set and get creation and modification times
+- Event Message boxes evte, emib, emeb
+- GetBtrt method to StsdBox
+- Btrt pointer attribute in AudioSampleEnntry
+- stpp can be used as value to CreateEmptyTrak
+
+## [0.45.1] - 2024-07-12
+
+### Added
+
+- Box decoder error messages include start position
+
+### Fixed
+
+- Overflow in calculating sample decode time
+- elng box errononously did not include full box headers
+
+## [0.45.0] - 2024-06-06
+
+### Changed
+
+- minimum Go version 1.16.
+- ioutil imports replaced by io and os imports
+- Info (mp4ff-info) output for esds boxes
+- API of descriptors
+- Parsing and info output for url boxes
+
+### Fixed
+
+- support for parsing of hierarchical sidx boxes
+- handling of partially bad descriptors
+- handle url boxes missing mandatory zero-ending byte
+
+### Added
+
+- support for ssix box
+- support for leva box
+- details of descriptors as Info outout (mp4ff-info)
+
+## [0.44.0] - 2024-04-19
+
+### Added
+
+- New `TryDecodeMfro` function
+- New `mp4ff-subslister` tool replacing `mp4ff-wvttlister`. It supports `wvtt` and `stpp`
+- `File.UpdateSidx()` to update or add a top level sidx box for a fragmented file
+- `mp4.DecStartSegmentOnMoof` flag to make the Decoder interpret every moof as
+  a new segment start, unless styp, sidx, or mfra boxes give that information.
+- New example `add-sidx` shows how on can add a top-level `sidx` box to a fragmented file.
+  It further has the option to remove unused encryption boxes, and to interpret each
+  moof box as starting a new segment.
+- New method `MoovBox.IsEncrypted()` checks if an encrypted codec is signaled
+
+### Fixed
+
+- More robust check for mfro at the end of file
+- GetTrex() return value
+- Can now write PIFF `uuid` box that has previously been read
+- Does now avoid the second parsing of `senc` box if the file is ot encrypted as seen in moov box.
+
+### Removed
+
+- mp4ff-wvttlister tool removed and replaced by mp4ff-subslister
+
+## [0.43.0] - 2024-04-04
+
+### Added
+
 - InitSegment.TweakSingleTrakLive changes an init segment to fit live streaming
+- Made bits.Mask() function public
+- New counter methods added to bits.Reader
+- colr box support for nclc and unknown colour_type
+- av01, encv, and enca direct pointers in stsd
+
+### Changed
+
+- All readers and writers in bits package now stop working at first error and provides the first error as AccError()
+- Renamed bits.AccErrReader, bits.AccErrEBSPReader, bits.AccErrWriter to corresponiding names without AccErr
+- Renamed bits.SliceWriterError to bits.ErrSliceWrite
+- colr box supports unknown colrType
+
+### Fixed
+
+- kind box full-box header
+- stpp support when the optional fields do not have a zero-termination byte
+- mp4ff-wvttlister now lists all boxes in a sample
 
 ## [0.42.0] - 2024-01-26
 
@@ -74,6 +247,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SPS.ChromaArrayType method
 - Makefile now builds all CLI applications with version
+- DecryptInit extracts pssh boxes
 
 ### Changed
 
@@ -540,7 +714,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New unique repo name: `mp4ff`
 
-[Unreleased]: https://github.com/Eyevinn/mp4ff/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/Eyevinn/mp4ff/compare/v0.48.0...HEAD
+[0.48.0]: https://github.com/Eyevinn/mp4ff/compare/v0.47.0...v0.48.0
+[0.47.0]: https://github.com/Eyevinn/mp4ff/compare/v0.46.0...v0.47.0
+[0.46.0]: https://github.com/Eyevinn/mp4ff/compare/v0.45.1...v0.46.0
+[0.45.1]: https://github.com/Eyevinn/mp4ff/compare/v0.45.0...v0.45.1
+[0.45.0]: https://github.com/Eyevinn/mp4ff/compare/v0.44.0...v0.45.0
+[0.44.0]: https://github.com/Eyevinn/mp4ff/compare/v0.43.0...v0.44.0
+[0.43.0]: https://github.com/Eyevinn/mp4ff/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/Eyevinn/mp4ff/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/Eyevinn/mp4ff/compare/v0.40.2...v0.41.0
 [0.40.2]: https://github.com/Eyevinn/mp4ff/compare/v0.40.1...v0.40.2

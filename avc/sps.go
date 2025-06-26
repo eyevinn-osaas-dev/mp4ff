@@ -13,7 +13,7 @@ const ExtendedSAR = 255
 
 // SPS errors
 var (
-	ErrNotSPS = errors.New("Not an SPS NAL unit")
+	ErrNotSPS = errors.New("not an SPS NAL unit")
 )
 
 // SPS - AVC SPS parameters
@@ -117,7 +117,7 @@ func ParseSPSNALUnit(data []byte, parseVUIBeyondAspectRatio bool) (*SPS, error) 
 	sps := &SPS{}
 
 	rd := bytes.NewReader(data)
-	reader := bits.NewAccErrEBSPReader(rd)
+	reader := bits.NewEBSPReader(rd)
 	// Note! First byte is NAL Header
 
 	nalHdr := reader.Read(8)
@@ -173,9 +173,10 @@ func ParseSPSNALUnit(data []byte, parseVUIBeyondAspectRatio bool) (*SPS, error) 
 
 	sps.Log2MaxFrameNumMinus4 = reader.ReadExpGolomb()
 	sps.PicOrderCntType = reader.ReadExpGolomb()
-	if sps.PicOrderCntType == 0 {
+	switch sps.PicOrderCntType {
+	case 0:
 		sps.Log2MaxPicOrderCntLsbMinus4 = reader.ReadExpGolomb()
-	} else if sps.PicOrderCntType == 1 {
+	case 1:
 		sps.DeltaPicOrderAlwaysZeroFlag = reader.ReadFlag()
 		sps.OffsetForNonRefPic = reader.ReadExpGolomb()
 		sps.OffsetForTopToBottomField = reader.ReadExpGolomb()
@@ -219,7 +220,7 @@ func ParseSPSNALUnit(data []byte, parseVUIBeyondAspectRatio bool) (*SPS, error) 
 		case 3: //This lacks one extra check?
 			cropUnitX, cropUnitY = 1, 1*(2-frameMbsOnly)
 		default:
-			return nil, fmt.Errorf("Non-vaild chroma_format_idc value: %d", sps.ChromaFormatIDC)
+			return nil, fmt.Errorf("non-vaild chroma_format_idc value: %d", sps.ChromaFormatIDC)
 		}
 
 		sps.FrameCropLeftOffset = reader.ReadExpGolomb()
@@ -271,7 +272,7 @@ func (s *SPS) ChromaArrayType() byte {
 
 // parseVUI - parse VUI (Visual Usability Information)
 // if parseVUIBeyondAspectRatio is false, stop after AspectRatio has been parsed
-func parseVUI(reader *bits.AccErrEBSPReader, parseVUIBeyondAspectRatio bool) *VUIParameters {
+func parseVUI(reader *bits.EBSPReader, parseVUIBeyondAspectRatio bool) *VUIParameters {
 	vui := &VUIParameters{}
 	var err error
 	aspectRatioInfoPresentFlag := reader.ReadFlag()
@@ -342,7 +343,7 @@ func parseVUI(reader *bits.AccErrEBSPReader, parseVUIBeyondAspectRatio bool) *VU
 	return vui
 }
 
-func parseHrdParameters(r *bits.AccErrEBSPReader) *HrdParameters {
+func parseHrdParameters(r *bits.EBSPReader) *HrdParameters {
 	hp := &HrdParameters{}
 	hp.CpbCountMinus1 = r.ReadExpGolomb()
 
@@ -380,7 +381,7 @@ func GetSARfromIDC(index uint) (uint, uint, error) {
 	return aspectRatioTable[index-1][0], aspectRatioTable[index-1][1], nil
 }
 
-func readScalingList(reader *bits.AccErrEBSPReader, sizeOfScalingList int) ScalingList {
+func readScalingList(reader *bits.EBSPReader, sizeOfScalingList int) ScalingList {
 	scalingList := make([]int, sizeOfScalingList)
 	lastScale := 8
 	nextScale := 8

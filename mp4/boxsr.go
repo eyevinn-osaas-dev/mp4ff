@@ -10,20 +10,25 @@ var decodersSR map[string]BoxDecoderSR
 
 func init() {
 	decodersSR = map[string]BoxDecoderSR{
+		"\xa9ART": DecodeGenericContainerBoxSR,
+		"\xa9cpy": DecodeGenericContainerBoxSR,
+		"\xa9nam": DecodeGenericContainerBoxSR,
+		"\xa9too": DecodeGenericContainerBoxSR,
 		"ac-3":    DecodeAudioSampleEntrySR,
+		"alou":    DecodeLoudnessBaseBoxSR,
 		"av01":    DecodeVisualSampleEntrySR,
+		"av1C":    DecodeAv1CSR,
 		"avc1":    DecodeVisualSampleEntrySR,
 		"avc3":    DecodeVisualSampleEntrySR,
-		"alou":    DecodeAlouBoxSR,
 		"avcC":    DecodeAvcCSR,
-		"av1C":    DecodeAv1CSR,
 		"btrt":    DecodeBtrtSR,
 		"cdat":    DecodeCdatSR,
 		"cdsc":    DecodeTrefTypeSR,
 		"clap":    DecodeClapSR,
-		"cslg":    DecodeCslgSR,
 		"co64":    DecodeCo64SR,
+		"CoLL":    DecodeCoLLSR,
 		"colr":    DecodeColrSR,
+		"cslg":    DecodeCslgSR,
 		"ctim":    DecodeCtimSR,
 		"ctts":    DecodeCttsSR,
 		"dac3":    DecodeDac3SR,
@@ -34,13 +39,16 @@ func init() {
 		"dpnd":    DecodeTrefTypeSR,
 		"dref":    DecodeDrefSR,
 		"ec-3":    DecodeAudioSampleEntrySR,
-		"elng":    DecodeElngSR,
-		"esds":    DecodeEsdsSR,
 		"edts":    DecodeEdtsSR,
+		"elng":    DecodeElngSR,
 		"elst":    DecodeElstSR,
+		"emeb":    DecodeEmebSR,
+		"emib":    DecodeEmibSR,
+		"emsg":    DecodeEmsgSR,
 		"enca":    DecodeAudioSampleEntrySR,
 		"encv":    DecodeVisualSampleEntrySR,
-		"emsg":    DecodeEmsgSR,
+		"esds":    DecodeEsdsSR,
+		"evte":    DecodeEvteSR,
 		"font":    DecodeTrefTypeSR,
 		"free":    DecodeFreeSR,
 		"frma":    DecodeFrmaSR,
@@ -49,13 +57,14 @@ func init() {
 		"hev1":    DecodeVisualSampleEntrySR,
 		"hind":    DecodeTrefTypeSR,
 		"hint":    DecodeTrefTypeSR,
-		"hvcC":    DecodeHvcCSR,
 		"hvc1":    DecodeVisualSampleEntrySR,
+		"hvcC":    DecodeHvcCSR,
 		"iden":    DecodeIdenSR,
 		"ilst":    DecodeIlstSR,
 		"iods":    DecodeUnknownSR,
 		"ipir":    DecodeTrefTypeSR,
 		"kind":    DecodeKindSR,
+		"leva":    DecodeLevaSR,
 		"ludt":    DecodeLudtSR,
 		"mdat":    DecodeMdatSR,
 		"mehd":    DecodeMehdSR,
@@ -69,10 +78,10 @@ func init() {
 		"minf":    DecodeMinfSR,
 		"moof":    DecodeMoofSR,
 		"moov":    DecodeMoovSR,
+		"mp4a":    DecodeAudioSampleEntrySR,
 		"mpod":    DecodeTrefTypeSR,
 		"mvex":    DecodeMvexSR,
 		"mvhd":    DecodeMvhdSR,
-		"mp4a":    DecodeAudioSampleEntrySR,
 		"nmhd":    DecodeNmhdSR,
 		"pasp":    DecodePaspSR,
 		"payl":    DecodePaylSR,
@@ -87,12 +96,15 @@ func init() {
 		"senc":    DecodeSencSR,
 		"sgpd":    DecodeSgpdSR,
 		"sidx":    DecodeSidxSR,
+		"silb":    DecodeSilbSR,
 		"sinf":    DecodeSinfSR,
 		"skip":    DecodeFreeSR,
+		"SmDm":    DecodeSmDmSR,
 		"smhd":    DecodeSmhdSR,
-		"sthd":    DecodeSthdSR,
+		"ssix":    DecodeSsixSR,
 		"stbl":    DecodeStblSR,
 		"stco":    DecodeStcoSR,
+		"sthd":    DecodeSthdSR,
 		"stpp":    DecodeStppSR,
 		"stsc":    DecodeStscSR,
 		"stsd":    DecodeStsdSR,
@@ -109,7 +121,7 @@ func init() {
 		"tfhd":    DecodeTfhdSR,
 		"tfra":    DecodeTfraSR,
 		"tkhd":    DecodeTkhdSR,
-		"tlou":    DecodeTlouSR,
+		"tlou":    DecodeLoudnessBaseBoxSR,
 		"traf":    DecodeTrafSR,
 		"trak":    DecodeTrakSR,
 		"tref":    DecodeTrefSR,
@@ -122,6 +134,9 @@ func init() {
 		"vdep":    DecodeTrefTypeSR,
 		"vlab":    DecodeVlabSR,
 		"vmhd":    DecodeVmhdSR,
+		"vp08":    DecodeVisualSampleEntrySR,
+		"vp09":    DecodeVisualSampleEntrySR,
+		"vpcC":    DecodeVppCSR,
 		"vplx":    DecodeTrefTypeSR,
 		"vsid":    DecodeVsidSR,
 		"vtta":    DecodeVttaSR,
@@ -129,10 +144,6 @@ func init() {
 		"vttC":    DecodeVttCSR,
 		"vtte":    DecodeVtteSR,
 		"wvtt":    DecodeWvttSR,
-		"\xa9cpy": DecodeGenericContainerBoxSR,
-		"\xa9nam": DecodeGenericContainerBoxSR,
-		"\xa9too": DecodeGenericContainerBoxSR,
-		"\xa9ART": DecodeGenericContainerBoxSR,
 	}
 }
 
@@ -166,7 +177,7 @@ func DecodeBoxSR(startPos uint64, sr bits.SliceReader) (Box, error) {
 		b, err = d(h, startPos, sr)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("decode box %s: %w", h.Name, err)
+		return nil, fmt.Errorf("decode %s pos %d: %w", h.Name, startPos, err)
 	}
 
 	return b, nil
@@ -177,13 +188,17 @@ func DecodeHeaderSR(sr bits.SliceReader) (BoxHeader, error) {
 	size := uint64(sr.ReadUint32())
 	boxType := sr.ReadFixedLengthString(4)
 	headerLen := boxHeaderSize
-	if size == 1 {
+	switch size {
+	case 1: // size 1 means large size in next 8 bytes
 		size = sr.ReadUint64()
 		headerLen += largeSizeLen
-	} else if size == 0 {
+	case 0: // size 0 means to end of file
 		return BoxHeader{}, fmt.Errorf("Size 0, meaning to end of file, not supported")
 	}
-	return BoxHeader{boxType, size, headerLen}, nil
+	if uint64(headerLen) > size {
+		return BoxHeader{}, fmt.Errorf("box header size %d exceeds box size %d", headerLen, size)
+	}
+	return BoxHeader{boxType, size, headerLen}, sr.AccError()
 }
 
 // DecodeFile - parse and decode a file from reader r with optional file options.
@@ -214,31 +229,42 @@ LoopBoxes:
 			return nil, err
 		}
 		boxType, boxSize := box.Type(), box.Size()
-		if err != nil {
-			return nil, err
-		}
 		switch boxType {
 		case "mdat":
 			if f.isFragmented {
 				if lastBoxType != "moof" {
 					return nil, fmt.Errorf("does not support %v between moof and mdat", lastBoxType)
 				}
+			} else {
+				if f.Mdat != nil {
+					oldPayloadSize := f.Mdat.Size() - f.Mdat.HeaderSize()
+					newMdat := box.(*MdatBox)
+					newPayloadSize := newMdat.Size() - newMdat.HeaderSize()
+					if oldPayloadSize > 0 && newPayloadSize > 0 {
+						return nil, fmt.Errorf("only one non-empty mdat box supported (payload sizes %d and %d)",
+							oldPayloadSize, newPayloadSize)
+					}
+				}
 			}
 		case "moof":
 			moof := box.(*MoofBox)
 			for _, traf := range moof.Trafs {
 				if ok, parsed := traf.ContainsSencBox(); ok && !parsed {
+					isEncrypted := true
 					defaultIVSize := byte(0) // Should get this from tenc in sinf
 					if f.Moov != nil {
 						trackID := traf.Tfhd.TrackID
+						isEncrypted = f.Moov.IsEncrypted(trackID)
 						sinf := f.Moov.GetSinf(trackID)
 						if sinf != nil && sinf.Schi != nil && sinf.Schi.Tenc != nil {
 							defaultIVSize = sinf.Schi.Tenc.DefaultPerSampleIVSize
 						}
 					}
-					err = traf.ParseReadSenc(defaultIVSize, moof.StartPos)
-					if err != nil {
-						return nil, err
+					if isEncrypted {
+						err = traf.ParseReadSenc(defaultIVSize, moof.StartPos)
+						if err != nil {
+							return nil, err
+						}
 					}
 				}
 			}

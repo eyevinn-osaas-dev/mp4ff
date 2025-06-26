@@ -1,9 +1,11 @@
-package mp4
+package mp4_test
 
 import (
 	"bytes"
 	"encoding/hex"
 	"testing"
+
+	"github.com/Eyevinn/mp4ff/mp4"
 )
 
 func TestUUIDVariants(t *testing.T) {
@@ -26,15 +28,15 @@ func TestUUIDVariants(t *testing.T) {
 	for _, ti := range testInputs {
 		inRawBox, _ := hex.DecodeString(ti.rawData)
 		inbuf := bytes.NewBuffer(inRawBox)
-		hdr, err := DecodeHeader(inbuf)
+		hdr, err := mp4.DecodeHeader(inbuf)
 		if err != nil {
 			t.Error(err)
 		}
-		uuidRead, err := DecodeUUIDBox(hdr, 0, inbuf)
+		uuidRead, err := mp4.DecodeUUIDBox(hdr, 0, inbuf)
 		if err != nil {
 			t.Error(err)
 		}
-		uBox := uuidRead.(*UUIDBox)
+		uBox := uuidRead.(*mp4.UUIDBox)
 		if uBox.SubType() != ti.expectedSubType {
 			t.Errorf("got subtype %s instead of %s", uBox.SubType(), ti.expectedSubType)
 		}
@@ -60,7 +62,7 @@ func TestUUIDVariants(t *testing.T) {
 func TestSetUUID(t *testing.T) {
 	testCases := []struct {
 		uuidStr    string
-		expected   uuid
+		expected   mp4.UUID
 		shouldFail bool
 	}{
 		{
@@ -73,7 +75,7 @@ func TestSetUUID(t *testing.T) {
 		},
 	}
 	for i, tc := range testCases {
-		u := UUIDBox{}
+		u := mp4.UUIDBox{}
 		err := u.SetUUID(tc.uuidStr)
 		if tc.shouldFail {
 			if err == nil {
@@ -89,23 +91,81 @@ func TestSetUUID(t *testing.T) {
 
 func TestUUIDEncodeDecoder(t *testing.T) {
 
-	tfrf := &UUIDBox{
-		uuid: mustCreateUUID(UUIDTfrf),
-		Tfrf: &TfrfData{
-			FragmentCount:             1,
-			FragmentAbsoluteTimes:     []uint64{0},
-			FragmentAbsoluteDurations: []uint64{1000000},
-		},
-	}
-
+	tfrf := mp4.NewTfrfBox(1, []uint64{0}, []uint64{1000000})
 	boxDiffAfterEncodeAndDecode(t, tfrf)
 
-	tfxd := &UUIDBox{
-		uuid: mustCreateUUID(UUIDTfxd),
-		Tfxd: &TfxdData{
-			FragmentAbsoluteTime:     0,
-			FragmentAbsoluteDuration: 1000000,
+	tfxd := mp4.NewTfxdBox(0, 1_000_000)
+	boxDiffAfterEncodeAndDecode(t, tfxd)
+}
+
+func TestUnpackKey(t *testing.T) {
+	cases := []struct {
+		desc        string
+		keyStr      string
+		expected    []byte
+		expectedErr string
+	}{
+		{
+			desc:   "valid hex key",
+			keyStr: "00112233445566778899aabbccddeeff",
+			expected: []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+				0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
+			expectedErr: "",
+		},
+		{
+			desc:        "invalid hex key",
+			keyStr:      "0011223x445566778899aabbccddeeff",
+			expectedErr: "bad hex 001122...ddeeff: encoding/hex: invalid byte: U+0078 'x'",
+		},
+		{
+			desc:        "wrong length key",
+			keyStr:      "00112233445566778899aab",
+			expectedErr: "cannot decode key 00112233445566778899aab",
+		},
+		{
+			desc:   "good uuid",
+			keyStr: "00112233-4455-6677-8899-aabbccddeeff",
+			expected: []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+				0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
+			expectedErr: "",
+		},
+		{
+			desc:        "bad uuid, misplaced dashes",
+			keyStr:      "00----112233445566778899aabbccddeeff",
+			expectedErr: "bad uuid format: 00----...ddeeff",
+		},
+		{
+			desc:        "bad uuid too many dashes",
+			keyStr:      "00112233-4-55-6677-8899-aabbccddeeff",
+			expectedErr: "bad uuid format: 001122...ddeeff",
+		},
+		{
+			desc:        "bad hex in uuid",
+			keyStr:      "0011223x-4455-6677-8899-aabbccddeeff",
+			expectedErr: "bad uuid 001122...ddeeff: encoding/hex: invalid byte: U+0078 'x'",
+		},
+		{
+			desc:        "valid base64 key",
+			keyStr:      "ABEiM0RVZneImaq7zN3u/w=-",
+			expectedErr: "bad base64 ABEiM0...3u/w=-: illegal base64 data at input byte 22",
 		},
 	}
-	boxDiffAfterEncodeAndDecode(t, tfxd)
+	for _, c := range cases {
+		t.Run(c.desc, func(t *testing.T) {
+			key, err := mp4.UnpackKey(c.keyStr)
+			if c.expectedErr != "" {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+				if err.Error() != c.expectedErr {
+					t.Errorf("error %q not matching expected error %q", err, c.expectedErr)
+				}
+				return
+			}
+			if !bytes.Equal(key, c.expected) {
+				t.Errorf("got %x instead of %x", key, c.expected)
+			}
+		})
+	}
+
 }

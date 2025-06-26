@@ -1,6 +1,7 @@
 package avc
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/go-test/deep"
@@ -29,6 +30,27 @@ func TestGetNaluTypes(t *testing.T) {
 		if diff := deep.Equal(got, tc.wanted); diff != nil {
 			t.Errorf("%s: %v", tc.name, diff)
 		}
+		for _, w := range tc.wanted {
+			if !ContainsNaluType(tc.input, w) {
+				t.Errorf("%s: wanted %v in %v", tc.name, w, tc.input)
+			}
+			if w == NALU_IDR && !IsIDRSample(tc.input) {
+				t.Errorf("%s: wanted IDR in %v", tc.name, tc.input)
+			}
+		}
+	}
+}
+
+func TestNaluTypeStrings(t *testing.T) {
+	named := make([]int, 0, 9)
+	for i := 0; i < 14; i++ {
+		nt := NaluType(i)
+		if !strings.HasPrefix(nt.String(), "Other") {
+			named = append(named, i)
+		}
+	}
+	if len(named) != 9 {
+		t.Errorf("Expected 9 named NaluTypes, got %d", len(named))
 	}
 }
 
@@ -94,5 +116,48 @@ func TestGetParameterSets(t *testing.T) {
 		if diff := deep.Equal(gotPPS, tc.wantedPPS); diff != nil {
 			t.Errorf("%s: %v", tc.name, diff)
 		}
+	}
+}
+
+func TestIsVideoNaluType(t *testing.T) {
+	testCases := []struct {
+		name     string
+		naluType NaluType
+		want     bool
+	}{
+		{
+			name:     "video type - NALU_NON_IDR (1)",
+			naluType: NALU_NON_IDR,
+			want:     true,
+		},
+		{
+			name:     "video type - NALU_IDR (5)",
+			naluType: NALU_IDR,
+			want:     true,
+		},
+		{
+			name:     "non-video type - NALU_SEI (6)",
+			naluType: NALU_SEI,
+			want:     false,
+		},
+		{
+			name:     "non-video type - NALU_SPS (7)",
+			naluType: NALU_SPS,
+			want:     false,
+		},
+		{
+			name:     "non-video type - NALU_AUD (9)",
+			naluType: NALU_AUD,
+			want:     false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsVideoNaluType(tc.naluType)
+			if got != tc.want {
+				t.Errorf("IsVideoNaluType(%d) = %v; want %v", tc.naluType, got, tc.want)
+			}
+		})
 	}
 }

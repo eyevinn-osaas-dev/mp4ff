@@ -21,10 +21,13 @@ type VisualSampleEntryBox struct {
 	AvcC               *AvcCBox
 	HvcC               *HvcCBox
 	Av1C               *Av1CBox
+	VppC               *VppCBox
 	Btrt               *BtrtBox
 	Clap               *ClapBox
 	Pasp               *PaspBox
 	Sinf               *SinfBox
+	SmDm               *SmDmBox
+	CoLL               *CoLLBox
 	Children           []Box
 }
 
@@ -63,6 +66,8 @@ func (b *VisualSampleEntryBox) AddChild(child Box) {
 		b.HvcC = box
 	case *Av1CBox:
 		b.Av1C = box
+	case *VppCBox:
+		b.VppC = box
 	case *BtrtBox:
 		b.Btrt = box
 	case *ClapBox:
@@ -71,8 +76,11 @@ func (b *VisualSampleEntryBox) AddChild(child Box) {
 		b.Pasp = box
 	case *SinfBox:
 		b.Sinf = box
+	case *SmDmBox:
+		b.SmDm = box
+	case *CoLLBox:
+		b.CoLL = box
 	}
-
 	b.Children = append(b.Children, child)
 }
 
@@ -112,17 +120,14 @@ func DecodeVisualSampleEntrySR(hdr BoxHeader, startPos uint64, sr bits.SliceRead
 	}
 	b.CompressorName = sr.ReadFixedLengthString(int(compressorNameLength))
 	sr.SkipBytes(int(31 - compressorNameLength))
-	sr.ReadUint16() // depth == 0x0018
+	sr.SkipBytes(2) // Skip depth
 	sr.ReadUint16() // pre_defined == -1
 
 	// Now there may be clap and pasp boxes
 	// 14496-15  5.4.2.1.2 avcC should be inside avc1, avc3 box
 	pos := startPos + 86 // Size of all previous data
 	endPos := startPos + uint64(hdr.Hdrlen) + uint64(hdr.payloadLen())
-	for {
-		if pos >= endPos {
-			break
-		}
+	for pos < endPos {
 		box, err := DecodeBoxSR(pos, sr)
 		if err != nil {
 			return nil, fmt.Errorf("error decoding childBox of VisualSampleEntry: %w", err)
@@ -179,7 +184,7 @@ func (b *VisualSampleEntryBox) Encode(w io.Writer) error {
 	sw.WriteUint8(compressorNameLength)
 	sw.WriteString(b.CompressorName, false)
 	sw.WriteZeroBytes(int(31 - compressorNameLength))
-	sw.WriteUint16(0x0018) // depth == 0x0018
+	sw.WriteUint16(0x0018) // depth
 	sw.WriteUint16(0xffff) // pre_defined == -1  //86 bytes
 
 	_, err = w.Write(buf[:sw.Offset()]) // Only write  written bytes
@@ -218,7 +223,7 @@ func (b *VisualSampleEntryBox) EncodeSW(sw bits.SliceWriter) error {
 	sw.WriteUint8(compressorNameLength)
 	sw.WriteString(b.CompressorName, false)
 	sw.WriteZeroBytes(int(31 - compressorNameLength))
-	sw.WriteUint16(0x0018) // depth == 0x0018
+	sw.WriteUint16(0x0018) // depth
 	sw.WriteUint16(0xffff) // pre_defined == -1  //86 bytes
 
 	// Next output child boxes in order
@@ -276,9 +281,9 @@ func (b *VisualSampleEntryBox) ConvertHev1ToHvc1(vpss [][]byte, spss [][]byte, p
 		return fmt.Errorf("type is %s and not hev1", b.Type())
 	}
 	b.SetType("hvc1")
-	b.HvcC.DecConfRec.NaluArrays = append(b.HvcC.DecConfRec.NaluArrays, hevc.NewNaluArray(true, hevc.NALU_VPS, vpss))
-	b.HvcC.DecConfRec.NaluArrays = append(b.HvcC.DecConfRec.NaluArrays, hevc.NewNaluArray(true, hevc.NALU_SPS, spss))
-	b.HvcC.DecConfRec.NaluArrays = append(b.HvcC.DecConfRec.NaluArrays, hevc.NewNaluArray(true, hevc.NALU_PPS, ppss))
+	b.HvcC.NaluArrays = append(b.HvcC.NaluArrays, hevc.NewNaluArray(true, hevc.NALU_VPS, vpss))
+	b.HvcC.NaluArrays = append(b.HvcC.NaluArrays, hevc.NewNaluArray(true, hevc.NALU_SPS, spss))
+	b.HvcC.NaluArrays = append(b.HvcC.NaluArrays, hevc.NewNaluArray(true, hevc.NALU_PPS, ppss))
 	return nil
 }
 
@@ -288,7 +293,7 @@ func (b *VisualSampleEntryBox) ConvertAvc3ToAvc1(spss [][]byte, ppss [][]byte) e
 		return fmt.Errorf("type is %s and not avc3", b.Type())
 	}
 	b.SetType("avc1")
-	b.AvcC.DecConfRec.SPSnalus = spss
-	b.AvcC.DecConfRec.PPSnalus = ppss
+	b.AvcC.SPSnalus = spss
+	b.AvcC.PPSnalus = ppss
 	return nil
 }

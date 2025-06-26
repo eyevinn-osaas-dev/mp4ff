@@ -19,20 +19,25 @@ var decoders map[string]BoxDecoder
 
 func init() {
 	decoders = map[string]BoxDecoder{
+		"\xa9ART": DecodeGenericContainerBox,
+		"\xa9nam": DecodeGenericContainerBox,
+		"\xa9too": DecodeGenericContainerBox,
+		"\xa9cpy": DecodeGenericContainerBox,
 		"ac-3":    DecodeAudioSampleEntry,
-		"alou":    DecodeAlou,
+		"alou":    DecodeLoudnessBaseBox,
 		"av01":    DecodeVisualSampleEntry,
+		"av1C":    DecodeAv1C,
 		"avc1":    DecodeVisualSampleEntry,
 		"avc3":    DecodeVisualSampleEntry,
 		"avcC":    DecodeAvcC,
-		"av1C":    DecodeAv1C,
 		"btrt":    DecodeBtrt,
 		"cdat":    DecodeCdat,
 		"cdsc":    DecodeTrefType,
 		"clap":    DecodeClap,
-		"cslg":    DecodeCslg,
 		"co64":    DecodeCo64,
+		"CoLL":    DecodeCoLL,
 		"colr":    DecodeColr,
+		"cslg":    DecodeCslg,
 		"ctim":    DecodeCtim,
 		"ctts":    DecodeCtts,
 		"dac3":    DecodeDac3,
@@ -43,13 +48,16 @@ func init() {
 		"dpnd":    DecodeTrefType,
 		"dref":    DecodeDref,
 		"ec-3":    DecodeAudioSampleEntry,
-		"elng":    DecodeElng,
-		"esds":    DecodeEsds,
 		"edts":    DecodeEdts,
+		"elng":    DecodeElng,
 		"elst":    DecodeElst,
+		"emeb":    DecodeEmeb,
+		"emib":    DecodeEmib,
+		"emsg":    DecodeEmsg,
 		"enca":    DecodeAudioSampleEntry,
 		"encv":    DecodeVisualSampleEntry,
-		"emsg":    DecodeEmsg,
+		"esds":    DecodeEsds,
+		"evte":    DecodeEvte,
 		"font":    DecodeTrefType,
 		"free":    DecodeFree,
 		"frma":    DecodeFrma,
@@ -58,13 +66,14 @@ func init() {
 		"hev1":    DecodeVisualSampleEntry,
 		"hind":    DecodeTrefType,
 		"hint":    DecodeTrefType,
-		"hvcC":    DecodeHvcC,
 		"hvc1":    DecodeVisualSampleEntry,
+		"hvcC":    DecodeHvcC,
 		"iden":    DecodeIden,
 		"ilst":    DecodeIlst,
 		"iods":    DecodeUnknown,
 		"ipir":    DecodeTrefType,
 		"kind":    DecodeKind,
+		"leva":    DecodeLeva,
 		"ludt":    DecodeLudt,
 		"mdat":    DecodeMdat,
 		"mehd":    DecodeMehd,
@@ -78,10 +87,10 @@ func init() {
 		"minf":    DecodeMinf,
 		"moof":    DecodeMoof,
 		"moov":    DecodeMoov,
+		"mp4a":    DecodeAudioSampleEntry,
 		"mpod":    DecodeTrefType,
 		"mvex":    DecodeMvex,
 		"mvhd":    DecodeMvhd,
-		"mp4a":    DecodeAudioSampleEntry,
 		"nmhd":    DecodeNmhd,
 		"pasp":    DecodePasp,
 		"payl":    DecodePayl,
@@ -96,12 +105,15 @@ func init() {
 		"senc":    DecodeSenc,
 		"sgpd":    DecodeSgpd,
 		"sidx":    DecodeSidx,
+		"silb":    DecodeSilb,
 		"sinf":    DecodeSinf,
 		"skip":    DecodeFree,
+		"SmDm":    DecodeSmDm,
 		"smhd":    DecodeSmhd,
-		"sthd":    DecodeSthd,
+		"ssix":    DecodeSsix,
 		"stbl":    DecodeStbl,
 		"stco":    DecodeStco,
+		"sthd":    DecodeSthd,
 		"stpp":    DecodeStpp,
 		"stsc":    DecodeStsc,
 		"stsd":    DecodeStsd,
@@ -118,7 +130,7 @@ func init() {
 		"tfhd":    DecodeTfhd,
 		"tfra":    DecodeTfra,
 		"tkhd":    DecodeTkhd,
-		"tlou":    DecodeTlou,
+		"tlou":    DecodeLoudnessBaseBox,
 		"traf":    DecodeTraf,
 		"trak":    DecodeTrak,
 		"tref":    DecodeTref,
@@ -131,6 +143,9 @@ func init() {
 		"vdep":    DecodeTrefType,
 		"vlab":    DecodeVlab,
 		"vmhd":    DecodeVmhd,
+		"vp08":    DecodeVisualSampleEntry,
+		"vp09":    DecodeVisualSampleEntry,
+		"vpcC":    DecodeVppC,
 		"vplx":    DecodeTrefType,
 		"vsid":    DecodeVsid,
 		"vtta":    DecodeVtta,
@@ -138,10 +153,6 @@ func init() {
 		"vttC":    DecodeVttC,
 		"vtte":    DecodeVtte,
 		"wvtt":    DecodeWvtt,
-		"\xa9cpy": DecodeGenericContainerBox,
-		"\xa9nam": DecodeGenericContainerBox,
-		"\xa9too": DecodeGenericContainerBox,
-		"\xa9ART": DecodeGenericContainerBox,
 	}
 }
 
@@ -181,7 +192,8 @@ func DecodeHeader(r io.Reader) (BoxHeader, error) {
 	}
 	size := uint64(binary.BigEndian.Uint32(buf[0:4]))
 	headerLen := boxHeaderSize
-	if size == 1 {
+	switch size {
+	case 1: // size 1 means large size in next 8 bytes
 		buf := make([]byte, largeSizeLen)
 		_, err = io.ReadFull(r, buf)
 		if err != nil {
@@ -189,8 +201,11 @@ func DecodeHeader(r io.Reader) (BoxHeader, error) {
 		}
 		size = binary.BigEndian.Uint64(buf)
 		headerLen += largeSizeLen
-	} else if size == 0 {
+	case 0: // size 0 means to end of file
 		return BoxHeader{}, fmt.Errorf("Size 0, meaning to end of file, not supported")
+	}
+	if uint64(headerLen) > size {
+		return BoxHeader{}, fmt.Errorf("box header size %d exceeds box size %d", headerLen, size)
 	}
 	return BoxHeader{string(buf[4:8]), size, headerLen}, nil
 }
@@ -306,7 +321,7 @@ func DecodeBox(startPos uint64, r io.Reader) (Box, error) {
 		b, err = d(h, startPos, r)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("decode %s: %w", h.Name, err)
+		return nil, fmt.Errorf("decode %s pos %d: %w", h.Name, startPos, err)
 	}
 
 	return b, nil
@@ -350,14 +365,14 @@ func DecodeBoxLazyMdat(startPos uint64, r io.ReadSeeker) (Box, error) {
 type Fixed16 uint16
 
 func (f Fixed16) String() string {
-	return fmt.Sprintf("%d.%d", uint16(f)>>8, uint16(f)&7)
+	return fmt.Sprintf("%d.%d", uint16(f)>>8, uint16(f)&0xff)
 }
 
 // Fixed32 -  A 16.16 fixed point number
 type Fixed32 uint32
 
 func (f Fixed32) String() string {
-	return fmt.Sprintf("%d.%d", uint32(f)>>16, uint32(f)&15)
+	return fmt.Sprintf("%d.%d", uint32(f)>>16, uint32(f)&0xffff)
 }
 
 func strtobuf(out []byte, in string, l int) {
@@ -374,14 +389,17 @@ func makebuf(b Box) []byte {
 
 // readBoxBody reads complete box body. Returns error if not possible
 func readBoxBody(r io.Reader, h BoxHeader) ([]byte, error) {
-	bodyLen := h.Size - uint64(h.Hdrlen)
-	if bodyLen == 0 {
+	hdrLen := uint64(h.Hdrlen)
+	if hdrLen == h.Size {
 		return nil, nil
 	}
-	body := make([]byte, bodyLen)
-	_, err := io.ReadFull(r, body)
+	bodyLen := h.Size - hdrLen
+	body, err := io.ReadAll(io.LimitReader(r, int64(bodyLen)))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) != int(bodyLen) {
+		return nil, fmt.Errorf("read box body length %d does not match expected length %d", len(body), bodyLen)
 	}
 	return body, nil
 }

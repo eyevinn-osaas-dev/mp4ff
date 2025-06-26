@@ -49,8 +49,12 @@ func DecodeStscSR(hdr BoxHeader, startPos uint64, sr bits.SliceReader) (Box, err
 	b := StscBox{
 		Version: byte(versionAndFlags >> 24),
 		Flags:   versionAndFlags & flagsMask,
-		Entries: make([]StscEntry, entryCount),
 	}
+	if hdr.Size != b.expectedSize(int(entryCount)) {
+		return nil, fmt.Errorf("invalid stsc box size")
+	}
+
+	b.Entries = make([]StscEntry, entryCount)
 
 	var accSampleNr uint32 = 1
 
@@ -63,6 +67,9 @@ func DecodeStscSR(hdr BoxHeader, startPos uint64, sr bits.SliceReader) (Box, err
 		b.Entries[i].FirstSampleNr = accSampleNr
 
 		sdi := sr.ReadUint32()
+		if sdi == 0 {
+			return nil, fmt.Errorf("stsc sample description id is 0")
+		}
 		if i == 0 {
 			b.singleSampleDescriptionID = sdi
 		} else {
@@ -70,7 +77,7 @@ func DecodeStscSR(hdr BoxHeader, startPos uint64, sr bits.SliceReader) (Box, err
 				if b.singleSampleDescriptionID != 0 {
 					b.SampleDescriptionID = make([]uint32, entryCount)
 					for j := 0; j < i; j++ {
-						b.SampleDescriptionID[i] = sdi
+						b.SampleDescriptionID[j] = b.singleSampleDescriptionID
 					}
 					b.singleSampleDescriptionID = 0
 				}
@@ -88,7 +95,11 @@ func (b *StscBox) Type() string {
 
 // Size - box-specific size
 func (b *StscBox) Size() uint64 {
-	return uint64(boxHeaderSize + 8 + len(b.Entries)*12)
+	return b.expectedSize(len(b.Entries))
+}
+
+func (b *StscBox) expectedSize(nrEntries int) uint64 {
+	return uint64(boxHeaderSize + 8 + nrEntries*12)
 }
 
 // Encode - write box to w

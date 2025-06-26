@@ -18,6 +18,7 @@ type AudioSampleEntryBox struct {
 	Esds               *EsdsBox
 	Dac3               *Dac3Box
 	Dec3               *Dec3Box
+	Btrt               *BtrtBox
 	Sinf               *SinfBox
 	Children           []Box
 }
@@ -43,7 +44,7 @@ func CreateAudioSampleEntryBox(name string, nrChannels, sampleSize, sampleRate u
 		ChannelCount:       nrChannels,
 		SampleSize:         sampleSize,
 		SampleRate:         sampleRate,
-		Children:           []Box{},
+		Children:           nil,
 	}
 	if child != nil {
 		a.AddChild(child)
@@ -60,6 +61,8 @@ func (a *AudioSampleEntryBox) AddChild(child Box) {
 		a.Dac3 = child.(*Dac3Box)
 	case "dec3":
 		a.Dec3 = child.(*Dec3Box)
+	case "btrt":
+		a.Btrt = child.(*BtrtBox)
 	case "sinf":
 		a.Sinf = child.(*SinfBox)
 	}
@@ -132,10 +135,7 @@ func DecodeAudioSampleEntrySR(hdr BoxHeader, startPos uint64, sr bits.SliceReade
 
 	pos := startPos + nrAudioSampleBytesBeforeChildren // Size of all previous data
 	lastPos := startPos + hdr.Size
-	for {
-		if pos >= lastPos {
-			break
-		}
+	for pos < lastPos {
 		box, err := DecodeBoxSR(pos, sr)
 		if err != nil {
 			return nil, err

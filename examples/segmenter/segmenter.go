@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
@@ -28,7 +27,7 @@ type Track struct {
 // NewSegmenter - create a Segmenter from inFile and fill in track information
 func NewSegmenter(inFile *mp4.File) (*Segmenter, error) {
 	if inFile.IsFragmented() {
-		return nil, errors.New("Segmented input file not supported")
+		return nil, fmt.Errorf("segmented input file not supported")
 	}
 	s := Segmenter{inFile: inFile}
 	traks := inFile.Moov.Traks
@@ -96,7 +95,7 @@ func (s *Segmenter) MakeInitSegments() ([]*mp4.InitSegment, error) {
 				outStsd.AddChild(inStsd.HvcX)
 			}
 		default:
-			return nil, fmt.Errorf("Unsupported tracktype: %s", tr.trackType)
+			return nil, fmt.Errorf("unsupported tracktype: %s", tr.trackType)
 		}
 		inits = append(inits, init)
 	}
@@ -130,7 +129,7 @@ func (s *Segmenter) MakeMuxedInitSegment() (*mp4.InitSegment, error) {
 				outStsd.AddChild(inStsd.HvcX)
 			}
 		default:
-			return nil, fmt.Errorf("Unsupported tracktype: %s", tr.trackType)
+			return nil, fmt.Errorf("unsupported tracktype: %s", tr.trackType)
 		}
 	}
 
@@ -138,7 +137,8 @@ func (s *Segmenter) MakeMuxedInitSegment() (*mp4.InitSegment, error) {
 }
 
 // GetFullSamplesForInterval - get slice of fullsamples with numbers startSampleNr to endSampleNr (inclusive)
-func (s *Segmenter) GetFullSamplesForInterval(mp4f *mp4.File, tr *Track, startSampleNr, endSampleNr uint32, rs io.ReadSeeker) ([]mp4.FullSample, error) {
+func (s *Segmenter) GetFullSamplesForInterval(mp4f *mp4.File, tr *Track, startSampleNr, endSampleNr uint32,
+	rs io.ReadSeeker) ([]mp4.FullSample, error) {
 	stbl := tr.inTrak.Mdia.Minf.Stbl
 	samples := make([]mp4.FullSample, 0, endSampleNr-startSampleNr+1)
 	mdat := mp4f.Mdat

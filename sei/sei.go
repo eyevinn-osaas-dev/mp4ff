@@ -1,7 +1,3 @@
-// Package SEI provides SEI (Supplementary Enhancement Information) parsing and encoding for both AVC and HEVC.
-// The  SEI RBSP syntax is defined in Section 7.3.2.3  of ISO/IEC 14496-10 (AVC) 2020 and earlier.
-// For AVC, the SEI messages and their syntax is defined in ISO/IEC 14496-10 2020 Annex D.
-// For HEVC, the SEI message and their syntax i defined in ISO/IEC 23008-2 Annex D.
 package sei
 
 import (
@@ -553,7 +549,7 @@ func (s *SEIData) Size() uint {
 // In case the rbsp_trailing_bits 0x80 byte is missing at end, []seiData and
 // an ErrMissingRbspTrailingBits error are both returned.
 func ExtractSEIData(r io.ReadSeeker) (seiData []SEIData, err error) {
-	ar := bits.NewAccErrEBSPReader(r)
+	ar := bits.NewEBSPReader(r)
 	for {
 		payloadType := uint(0)
 		for {

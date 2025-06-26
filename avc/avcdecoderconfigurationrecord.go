@@ -11,8 +11,8 @@ import (
 
 // AVC parsing errors
 var (
-	ErrCannotParseAVCExtension = errors.New("Cannot parse SPS extensions")
-	ErrLengthSize              = errors.New("Can only handle 4byte NAL length size")
+	ErrCannotParseAVCExtension = errors.New("cannot parse SPS extensions")
+	ErrLengthSize              = errors.New("can only handle 4byte NAL length size")
 )
 
 // DecConfRec - AVCDecoderConfigurationRecord
@@ -27,6 +27,7 @@ type DecConfRec struct {
 	BitDepthChromaMinus1 byte
 	NumSPSExt            byte
 	NoTrailingInfo       bool // To handle strange cases where trailing info is missing
+	SkipBytes            int
 }
 
 // CreateAVCDecConfRec - extract information from sps and insert sps, pps if includePS set
@@ -61,6 +62,11 @@ func CreateAVCDecConfRec(spsNalus [][]byte, ppsNalus [][]byte, includePS bool) (
 
 // DecodeAVCDecConfRec - decode an AVCDecConfRec
 func DecodeAVCDecConfRec(data []byte) (DecConfRec, error) {
+	// Check minimum length for fixed header (6 bytes)
+	if len(data) < 6 {
+		return DecConfRec{}, fmt.Errorf("data too short for AVC decoder configuration record: %d bytes", len(data))
+	}
+
 	configurationVersion := data[0] // Should be 1
 	if configurationVersion != 1 {
 		return DecConfRec{}, fmt.Errorf("AVC decoder configuration record version %d unknown",
@@ -75,22 +81,48 @@ func DecodeAVCDecConfRec(data []byte) (DecConfRec, error) {
 	}
 	numSPS := data[5] & 0x1f // 5 bits following 3 reserved bits
 	pos := 6
+
 	spsNALUs := make([][]byte, 0, 1)
 	for i := 0; i < int(numSPS); i++ {
+		// Check if we have enough bytes to read NALU length
+		if pos+2 > len(data) {
+			return DecConfRec{}, fmt.Errorf("not enough data to read SPS NALU length at position %d", pos)
+		}
 		naluLength := int(binary.BigEndian.Uint16(data[pos : pos+2]))
 		pos += 2
+
+		// Check if we have enough bytes to read NALU
+		if pos+naluLength > len(data) {
+			return DecConfRec{}, fmt.Errorf("not enough data to read SPS NALU of length %d at position %d", naluLength, pos)
+		}
 		spsNALUs = append(spsNALUs, data[pos:pos+naluLength])
 		pos += naluLength
 	}
-	ppsNALUs := make([][]byte, 0, 1)
+
+	// Check if we have enough bytes to read numPPS
+	if pos >= len(data) {
+		return DecConfRec{}, fmt.Errorf("not enough data to read number of PPS at position %d", pos)
+	}
 	numPPS := data[pos]
 	pos++
+
+	ppsNALUs := make([][]byte, 0, 1)
 	for i := 0; i < int(numPPS); i++ {
+		// Check if we have enough bytes to read NALU length
+		if pos+2 > len(data) {
+			return DecConfRec{}, fmt.Errorf("not enough data to read PPS NALU length at position %d", pos)
+		}
 		naluLength := int(binary.BigEndian.Uint16(data[pos : pos+2]))
 		pos += 2
+
+		// Check if we have enough bytes to read NALU
+		if pos+naluLength > len(data) {
+			return DecConfRec{}, fmt.Errorf("not enough data to read PPS NALU of length %d at position %d", naluLength, pos)
+		}
 		ppsNALUs = append(ppsNALUs, data[pos:pos+naluLength])
 		pos += naluLength
 	}
+
 	adcr := DecConfRec{
 		AVCProfileIndication: AVCProfileIndication,
 		ProfileCompatibility: ProfileCompatibility,
@@ -98,6 +130,7 @@ func DecodeAVCDecConfRec(data []byte) (DecConfRec, error) {
 		SPSnalus:             spsNALUs,
 		PPSnalus:             ppsNALUs,
 	}
+
 	// The rest of this structure may vary
 	// ISO/IEC 14496-15 2017 says that
 	// Compatible extensions to this record will extend it and
@@ -109,9 +142,16 @@ func DecodeAVCDecConfRec(data []byte) (DecConfRec, error) {
 	switch AVCProfileIndication {
 	case 66, 77, 88: // From ISO/IEC 14496-15 2017 Section 5.3.3.1.2
 		// No extra bytes
-	default:
-		if pos == len(data) { // Not according to standard, but have been seen
+		if pos < len(data) {
 			adcr.NoTrailingInfo = true
+			adcr.SkipBytes = len(data) - pos
+		}
+	default:
+		// Check if we have enough bytes for the trailing info
+		// Not according to standard, but have been seen
+		if pos+4 > len(data) {
+			adcr.NoTrailingInfo = true
+			adcr.SkipBytes = len(data) - pos
 			return adcr, nil
 		}
 		adcr.ChromaFormat = data[pos] & 0x03
@@ -143,6 +183,7 @@ func (a *DecConfRec) Size() uint64 {
 			totalSize += 4
 		}
 	}
+	totalSize += a.SkipBytes
 	return uint64(totalSize)
 }
 
@@ -167,23 +208,28 @@ func (a *DecConfRec) EncodeSW(sw bits.SliceWriter) error {
 	sw.WriteUint8(a.AVCLevelIndication)
 	sw.WriteUint8(0xff) // Set length to 4
 
-	var nrSPS byte = byte(len(a.SPSnalus)) | 0xe0 // Added reserved 3 bits
+	var nrSPS = byte(len(a.SPSnalus)) | 0xe0 // Added reserved 3 bits
 	sw.WriteUint8(nrSPS)
 	for _, sps := range a.SPSnalus {
-		var length uint16 = uint16(len(sps))
+		var length = uint16(len(sps))
 		sw.WriteUint16(length)
 		sw.WriteBytes(sps)
 	}
-	var nrPPS byte = byte(len(a.PPSnalus))
+	var nrPPS = byte(len(a.PPSnalus))
 	sw.WriteUint8(nrPPS)
 	for _, pps := range a.PPSnalus {
-		var length uint16 = uint16(len(pps))
+		var length = uint16(len(pps))
 		sw.WriteUint16(length)
 		sw.WriteBytes(pps)
 	}
 	switch a.AVCProfileIndication {
+	case 66, 77, 88:
+		if a.NoTrailingInfo {
+			sw.WriteZeroBytes(a.SkipBytes)
+		}
 	case 100, 110, 122, 144: // From ISO/IEC 14496-15 2017 Section 5.3.3.1.2
 		if a.NoTrailingInfo { // Strange content, but consistent with Size()
+			sw.WriteZeroBytes(a.SkipBytes)
 			return sw.AccError()
 		}
 		sw.WriteUint8(0xfc | a.ChromaFormat)

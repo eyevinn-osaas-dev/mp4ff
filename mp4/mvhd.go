@@ -17,14 +17,17 @@ import (
 type MvhdBox struct {
 	Version          byte
 	Flags            uint32
-	CreationTime     uint64
-	ModificationTime uint64
+	CreationTime     uint64 // Seconds since 1904-01-01
+	ModificationTime uint64 // Seconds since 1904-01-01
 	Timescale        uint32
 	Duration         uint64
 	NextTrackID      uint32
 	Rate             Fixed32
 	Volume           Fixed16
 }
+
+// EpochDiffS is the difference in seconds between Jan 1, 1904 and Jan 1, 1970
+const EpochDiffS = int64((66*365 + 17) * 24 * 3600)
 
 // CreateMvhd - create mvhd box with reasonable values
 func CreateMvhd() *MvhdBox {
@@ -140,10 +143,29 @@ func (b *MvhdBox) Info(w io.Writer, specificBoxLevels, indent, indentStep string
 	return bd.err
 }
 
+// CreationTimeS returns the creation time in seconds since Jan 1, 1970
+func (b *MvhdBox) CreationTimeS() int64 {
+	return int64(b.CreationTime) - EpochDiffS
+}
+
+// ModificationTimeS returns the modification time in seconds since Jan 1, 1970
+func (b *MvhdBox) ModificationTimeS() int64 {
+	return int64(b.ModificationTime) - EpochDiffS
+}
+
+// SetCreationTimeS sets the creation time from seconds since Jan 1, 1970
+func (b *MvhdBox) SetCreationTimeS(unixTimeS int64) {
+	b.CreationTime = uint64(unixTimeS + EpochDiffS)
+}
+
+// SetModificationTimeS sets the modification time from seconds since Jan 1, 1970
+func (b *MvhdBox) SetModificationTimeS(unixTimeS int64) {
+	b.ModificationTime = uint64(unixTimeS + EpochDiffS)
+}
+
 // Make time string from t which is seconds since Jan. 1 1904
 func timeStr(t uint64) string {
-	epochDiffS := int64((66*365 + 16) * 24 * 3600)
-	unixSeconds := int64(t) - epochDiffS
+	unixSeconds := int64(t) - EpochDiffS
 	if unixSeconds < 0 {
 		return "0"
 	}

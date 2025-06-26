@@ -89,17 +89,14 @@ func (t *TrafBox) ParseReadSenc(defaultIVSize byte, moofStartPos uint64) error {
 		posFromSaio := t.Saio.Offset[0] + int64(moofStartPos)
 		if uint64(posFromSaio) != senc.StartPos+16 {
 			//TODO. Reenable
-			//return fmt.Errorf("offset from saio (%d) and moof differs from senc data start %d", posFromSaio, senc.StartPos+16)
-			fmt.Printf("offset from saio (%d) and moof differs from senc data start %d", posFromSaio, senc.StartPos+16)
+			return fmt.Errorf("offset from saio (%d) relative moof start differs from senc data start %d", posFromSaio, senc.StartPos+16)
+			//fmt.Printf("offset from saio (%d) and moof differs from senc data start %d\n", posFromSaio, senc.StartPos+16)
 
 		}
 	}
 	perSampleIVSize := defaultIVSize
-	if t.Sbgp != nil && t.Sgpd != nil {
-		sbgp, sgpd := t.Sbgp, t.Sgpd
-		if sbgp.GroupingType != "seig" {
-			return fmt.Errorf("sbgp grouping type %s not supported", sbgp.GroupingType)
-		}
+	sbgp, sgpd := t.Sbgp, t.Sgpd
+	if sbgp != nil && sbgp.GroupingType == "seig" && sgpd != nil && sgpd.GroupingType == "seig" {
 		nrSbgpEntries := len(sbgp.SampleCounts)
 		if nrSbgpEntries != 1 {
 			return fmt.Errorf("sbgp entries = %d, only 1 supported for now", nrSbgpEntries)
@@ -108,14 +105,7 @@ func (t *TrafBox) ParseReadSenc(defaultIVSize byte, moofStartPos uint64) error {
 		if sgpdEntryNr != sbgpInsideOffset+1 {
 			return fmt.Errorf("sgpd entry number must be first inside = 65536 + 1")
 		}
-		if sgpd.GroupingType != "seig" {
-			return fmt.Errorf("sgpd grouping type %s not supported", sgpd.GroupingType)
-		}
-
 		sgpdEntry := sgpd.SampleGroupEntries[sgpdEntryNr-sbgpInsideOffset-1]
-		if sgpdEntry.Type() != "seig" {
-			return fmt.Errorf("expected sgpd entry type seig but found %q", sgpdEntry.Type())
-		}
 		seigEntry := sgpdEntry.(*SeigSampleGroupEntry)
 		perSampleIVSize = seigEntry.PerSampleIVSize
 	}
@@ -212,7 +202,7 @@ func (t *TrafBox) OptimizeTfhdTrun() error {
 		}
 		if hasCommonDur {
 			// Set defaultSampleDuration in tfhd and remove from trun
-			tfhd.Flags = tfhd.Flags | defaultSampleDurationPresent
+			tfhd.Flags = tfhd.Flags | TfhdDefaultSampleDurationPresentFlag
 			tfhd.DefaultSampleDuration = commonDur
 			trun.Flags = trun.Flags & ^TrunSampleDurationPresentFlag
 		}
@@ -229,7 +219,7 @@ func (t *TrafBox) OptimizeTfhdTrun() error {
 		}
 		if hasCommonSize {
 			// Set defaultSampleSize in tfhd and remove from trun
-			tfhd.Flags = tfhd.Flags | defaultSampleSizePresent
+			tfhd.Flags = tfhd.Flags | TfhdDefaultSampleSizePresentFlag
 			tfhd.DefaultSampleSize = commonSize
 			trun.Flags = trun.Flags & ^TrunSampleSizePresentFlag
 		}
@@ -251,7 +241,7 @@ func (t *TrafBox) OptimizeTfhdTrun() error {
 			if firstSampleFlags != commonSampleFlags {
 				trun.SetFirstSampleFlags(firstSampleFlags)
 			}
-			tfhd.Flags = tfhd.Flags | defaultSampleFlagsPresent
+			tfhd.Flags = tfhd.Flags | TfhdDefaultSampleFlagsPresentFlag
 			tfhd.DefaultSampleFlags = commonSampleFlags
 			trun.Flags = trun.Flags & ^TrunSampleFlagsPresentFlag
 		}
@@ -291,6 +281,16 @@ func (t *TrafBox) RemoveEncryptionBoxes() uint64 {
 			if box.SubType() == "senc" {
 				nrBytesRemoved += ch.Size()
 				t.UUIDSenc = nil
+			}
+		case *SbgpBox:
+			if box.GroupingType == "seig" {
+				nrBytesRemoved += ch.Size()
+				t.Sbgp = nil
+			}
+		case *SgpdBox:
+			if box.GroupingType == "seig" {
+				nrBytesRemoved += ch.Size()
+				t.Sgpd = nil
 			}
 		default:
 			remainingChildren = append(remainingChildren, ch)

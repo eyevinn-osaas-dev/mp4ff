@@ -19,32 +19,6 @@ const (
 	UUID_W3C_COMMON = "1077efec-c0b2-4d02-ace3-3c1e52e2fb4b"
 )
 
-// UUID - 16-byte KeyID or SystemID
-type UUID []byte
-
-func (u UUID) String() string {
-	h := hex.EncodeToString(u)
-	if len(u) != 16 {
-		return h
-	}
-	return fmt.Sprintf("%s-%s-%s-%s-%s", h[0:8], h[8:12], h[12:16], h[16:20], h[20:32])
-}
-
-// NewUUIDFromHex creates a UUID from a hexadecimal string with 32 chars or 36 chars (with dashes)
-func NewUUIDFromHex(h string) (UUID, error) {
-	if len(h) == 36 {
-		h = strings.ReplaceAll(h, "-", "")
-	}
-	if len(h) != 32 {
-		return nil, fmt.Errorf("hex has %d chars, not 32", len(h))
-	}
-	s, err := hex.DecodeString(h)
-	if err != nil {
-		return nil, err
-	}
-	return UUID(s), nil
-}
-
 // ProtectionSystemName returns name of protection system if known.
 func ProtectionSystemName(systemID UUID) string {
 	uStr := systemID.String()
@@ -75,6 +49,37 @@ type PsshBox struct {
 	Data     []byte
 }
 
+// NewPsshBox makes a PsshBox with the given systemID, KIDs and data.
+// If there are KIDs, the version is set to 1, otherwise it is set to 0.
+// The systemID and KIDs are expected to be in the form of UUIDs
+// (e.g., "9a04f079-9840-4286-ab92-e65be0885f95"), hex without hyphens, or base-64 encoded strings.
+func NewPsshBox(systemID string, KIDs []string, data []byte) (*PsshBox, error) {
+	sysIdUUID, err := NewUUIDFromString(systemID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid system ID %s: %w", systemID, err)
+	}
+	b := &PsshBox{
+		Version:  0,
+		Flags:    0,
+		SystemID: sysIdUUID,
+		KIDs:     nil,
+		Data:     nil,
+	}
+	if len(KIDs) > 0 {
+		b.Version = 1
+		b.KIDs = make([]UUID, 0, len(KIDs))
+		for _, kid := range KIDs {
+			kUUID, err := NewUUIDFromString(kid)
+			if err != nil {
+				return nil, fmt.Errorf("invalid KID %s: %w", kid, err)
+			}
+			b.KIDs = append(b.KIDs, kUUID)
+		}
+	}
+
+	return b, nil
+}
+
 // DecodePssh - box-specific decode
 func DecodePssh(hdr BoxHeader, startPos uint64, r io.Reader) (Box, error) {
 	data, err := readBoxBody(r, hdr)
@@ -99,11 +104,16 @@ func DecodePsshSR(hdr BoxHeader, startPos uint64, sr bits.SliceReader) (Box, err
 		kidCount := sr.ReadUint32()
 		for i := uint32(0); i < kidCount; i++ {
 			b.KIDs = append(b.KIDs, UUID(sr.ReadFixedLengthString(16)))
-
+			if sr.AccError() != nil {
+				return nil, sr.AccError()
+			}
 		}
 	}
 	dataLength := int(sr.ReadUint32())
-	b.Data = sr.ReadBytes(dataLength)
+	if dataLength > 0 {
+		b.Data = sr.ReadBytes(dataLength)
+	}
+
 	return &b, sr.AccError()
 }
 

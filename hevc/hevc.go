@@ -122,17 +122,25 @@ func FindNaluTypesUpToFirstVideoNalu(sample []byte) []NaluType {
 		naluType := GetNaluType(sample[pos])
 		naluList = append(naluList, naluType)
 		pos += naluLength
-		if naluType <= highestVideoNaluType {
+		if IsVideoNaluType(naluType) {
 			break // Video has started
 		}
 	}
 	return naluList
 }
 
+// IsVideoNaluType returns true if NaluType is a video type (<= 31)
+func IsVideoNaluType(naluType NaluType) bool {
+	return naluType <= highestVideoNaluType
+}
+
 // ContainsNaluType - is specific NaluType present in sample
 func ContainsNaluType(sample []byte, specificNaluType NaluType) bool {
 	var pos uint32 = 0
 	length := len(sample)
+	if length < 4 {
+		return false
+	}
 	for pos < uint32(length-4) {
 		naluLength := binary.BigEndian.Uint32(sample[pos : pos+4])
 		pos += 4
@@ -190,10 +198,7 @@ func GetParameterSets(sample []byte) (vps, sps, pps [][]byte) {
 	sampleLength := uint32(len(sample))
 	var pos uint32 = 0
 naluLoop:
-	for {
-		if pos >= sampleLength {
-			break
-		}
+	for pos < sampleLength {
 		naluLength := binary.BigEndian.Uint32(sample[pos : pos+4])
 		pos += 4
 		switch naluType := GetNaluType(sample[pos]); {

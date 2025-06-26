@@ -181,9 +181,6 @@ func makeMultiTrackSegments(segmenter *Segmenter, parsedMp4 *mp4.File, rs io.Rea
 		if err != nil {
 			return err
 		}
-		if err != nil {
-			return err
-		}
 		fmt.Printf("Generated %s\n", outPath)
 		segNr++
 		if segNr > segmenter.nrSegs {
@@ -216,7 +213,7 @@ func getSegmentStartsFromVideo(parsedMp4 *mp4.File, segDurMS uint32) (timeScale 
 	stss := refTrak.Mdia.Minf.Stbl.Stss
 	ctts := refTrak.Mdia.Minf.Stbl.Ctts
 	syncPoints = make([]syncPoint, 0, stss.EntryCount())
-	var segmentStep uint32 = uint32(uint64(segDurMS) * uint64(timeScale) / 1000)
+	var segmentStep = uint32(uint64(segDurMS) * uint64(timeScale) / 1000)
 	var nextSegmentStart uint32 = 0
 	for _, sampleNr := range stss.SampleNumber {
 		decodeTime, _ := stts.GetDecodeTime(sampleNr)
@@ -306,7 +303,7 @@ func copyMediaData(trak *mp4.TrakBox, startSampleNr, endSampleNr uint32, rs io.R
 			return err
 		}
 		if n != size {
-			return fmt.Errorf("Copied %d bytes instead of %d", n, size)
+			return fmt.Errorf("copied %d bytes instead of %d", n, size)
 		}
 	}
 

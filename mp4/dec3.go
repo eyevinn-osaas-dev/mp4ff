@@ -3,7 +3,6 @@ package mp4
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"strings"
 
 	"github.com/Eyevinn/mp4ff/bits"
@@ -67,7 +66,7 @@ type EC3Sub struct {
 
 // DecodeDec3 - box-specific decode
 func DecodeDec3(hdr BoxHeader, startPos uint64, r io.Reader) (Box, error) {
-	data, err := ioutil.ReadAll(r)
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +84,7 @@ func DecodeDec3SR(hdr BoxHeader, startPos uint64, sr bits.SliceReader) (Box, err
 
 func decodeDec3FromData(data []byte) (Box, error) {
 	buf := bytes.NewBuffer(data)
-	br := bits.NewAccErrReader(buf)
+	br := bits.NewReader(buf)
 	b := Dec3Box{}
 	b.DataRate = uint16(br.Read(13))
 	nrSubs := br.Read(3) + 1 // There must be one base stream

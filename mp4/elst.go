@@ -41,24 +41,30 @@ func DecodeElstSR(hdr BoxHeader, startPos uint64, sr bits.SliceReader) (Box, err
 	b := &ElstBox{
 		Version: version,
 		Flags:   versionAndFlags & flagsMask,
-		Entries: make([]ElstEntry, entryCount),
 	}
 
-	if version == 1 {
+	if hdr.Size != b.expectedSize(entryCount) {
+		return nil, fmt.Errorf("elst: expected size %d, got %d", b.expectedSize(entryCount), hdr.Size)
+	}
+
+	b.Entries = make([]ElstEntry, entryCount)
+
+	switch version {
+	case 1:
 		for i := 0; i < int(entryCount); i++ {
 			b.Entries[i].SegmentDuration = sr.ReadUint64()
 			b.Entries[i].MediaTime = sr.ReadInt64()
 			b.Entries[i].MediaRateInteger = sr.ReadInt16()
 			b.Entries[i].MediaRateFraction = sr.ReadInt16()
 		}
-	} else if version == 0 {
+	case 0:
 		for i := 0; i < int(entryCount); i++ {
 			b.Entries[i].SegmentDuration = uint64(sr.ReadUint32())
 			b.Entries[i].MediaTime = int64(sr.ReadInt32())
 			b.Entries[i].MediaRateInteger = sr.ReadInt16()
 			b.Entries[i].MediaRateFraction = sr.ReadInt16()
 		}
-	} else {
+	default:
 		return nil, fmt.Errorf("unknown version for elst")
 	}
 	return b, sr.AccError()
@@ -71,10 +77,15 @@ func (b *ElstBox) Type() string {
 
 // Size - calculated size of box
 func (b *ElstBox) Size() uint64 {
+	return b.expectedSize(uint32(len(b.Entries)))
+}
+
+// expectedSize - calculate size for a given entry count
+func (b *ElstBox) expectedSize(entryCount uint32) uint64 {
 	if b.Version == 1 {
-		return uint64(boxHeaderSize + 8 + len(b.Entries)*20)
+		return uint64(boxHeaderSize + 8 + uint64(entryCount)*20) // 8 = version + flags + entryCount, 20 = uint64 + int64 + 2*int16
 	}
-	return uint64(boxHeaderSize + 8 + len(b.Entries)*12) // m.Version == 0
+	return uint64(boxHeaderSize + 8 + uint64(entryCount)*12) // 8 = version + flags + entryCount, 12 = uint32 + int32 + 2*int16
 }
 
 // Encode - write box to w

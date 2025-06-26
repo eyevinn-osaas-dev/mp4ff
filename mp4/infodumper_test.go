@@ -1,17 +1,18 @@
-package mp4
+package mp4_test
 
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/Eyevinn/mp4ff/mp4"
 	"github.com/go-test/deep"
 )
 
 // compareOrUpdateInfo - compare box with golden dump or update it with -update flag set
-func compareOrUpdateInfo(t *testing.T, b Informer, path string) error {
+func compareOrUpdateInfo(t *testing.T, b mp4.Informer, path string) error {
 	t.Helper()
 
 	var dumpBuf bytes.Buffer
@@ -29,7 +30,7 @@ func compareOrUpdateInfo(t *testing.T, b Informer, path string) error {
 	}
 
 	// Compare with golden dump file
-	golden, err := ioutil.ReadFile(path)
+	golden, err := os.ReadFile(path)
 	if err != nil {
 		t.Error(err)
 	}

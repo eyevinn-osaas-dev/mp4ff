@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+
 	"github.com/Eyevinn/mp4ff/bits"
 )
 
@@ -108,10 +109,12 @@ type WeightingFactors struct {
 }
 
 func ParseSliceHeader(nalu []byte, spsMap map[uint32]*SPS, ppsMap map[uint32]*PPS) (*SliceHeader, error) {
-	sh := &SliceHeader{}
+	sh := &SliceHeader{
+		CollocatedFromL0Flag: true, // Default according to Section 7.4.7.1
+	}
 
 	buf := bytes.NewBuffer(nalu)
-	r := bits.NewAccErrEBSPReader(buf)
+	r := bits.NewEBSPReader(buf)
 
 	naluHdrBits := r.Read(16)
 	naluType := GetNaluType(byte(naluHdrBits >> 8))
@@ -380,7 +383,7 @@ func ParseSliceHeader(nalu []byte, spsMap map[uint32]*SPS, ppsMap map[uint32]*PP
 	return sh, nil
 }
 
-func parseRefPicListsModification(r *bits.AccErrEBSPReader, sliceType SliceType,
+func parseRefPicListsModification(r *bits.EBSPReader, sliceType SliceType,
 	refIdxL0Minus1, refIdxL1Minus1 uint8, numPicTotalCurr uint8) (*RefPicListsModification, error) {
 	rplm := &RefPicListsModification{
 		RefPicListModificationFlagL0: r.ReadFlag(),
@@ -408,7 +411,7 @@ func parseRefPicListsModification(r *bits.AccErrEBSPReader, sliceType SliceType,
 	return rplm, nil
 }
 
-func parsePredWeightTable(r *bits.AccErrEBSPReader, sliceType SliceType,
+func parsePredWeightTable(r *bits.EBSPReader, sliceType SliceType,
 	refIdxL0Minus1, refIdxL1Minus1 uint8, chromaArrayType byte) (*PredWeightTable, error) {
 	pwt := &PredWeightTable{
 		// value shall be in the range of 0 to 7, inclusive

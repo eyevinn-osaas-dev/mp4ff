@@ -10,7 +10,7 @@ import (
 // MediaSegment is an MP4 Media Segment with one or more Fragments.
 type MediaSegment struct {
 	Styp        *StypBox
-	Sidx        *SidxBox   // The fist sidx box in a segment
+	Sidx        *SidxBox   // The first sidx box in a segment
 	Sidxs       []*SidxBox // All sidx boxes in a segment
 	Fragments   []*Fragment
 	EncOptimize EncOptimize
@@ -214,4 +214,20 @@ func (s *MediaSegment) CommonSampleDuration(trex *TrexBox) (uint32, error) {
 		}
 	}
 	return commonDur, nil
+}
+
+// FirstBox returns the first box in the segment, or an error if no boxes are found.
+func (s *MediaSegment) FirstBox() (Box, error) {
+	if s.Styp != nil {
+		return s.Styp, nil
+	}
+	if len(s.Sidxs) > 0 {
+		return s.Sidxs[0], nil
+	}
+	if len(s.Fragments) > 0 {
+		if len(s.Fragments[0].Children) > 0 {
+			return s.Fragments[0].Children[0], nil
+		}
+	}
+	return nil, fmt.Errorf("no boxes in segment")
 }

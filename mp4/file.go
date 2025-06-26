@@ -27,7 +27,7 @@ import (
 type File struct {
 	Ftyp         *FtypBox
 	Moov         *MoovBox
-	Mdat         *MdatBox        // Only used for non-fragmented files
+	Mdat         *MdatBox        // mdat box for non-fragmented files. Extra empty boxes allowed.
 	Init         *InitSegment    // Init data (ftyp + moov for fragmented file)
 	Sidx         *SidxBox        // The first sidx box for a DASH OnDemand file
 	Sidxs        []*SidxBox      // All sidx boxes for a DASH OnDemand file
@@ -69,7 +69,11 @@ type DecFileFlags uint32
 const (
 	DecNoFlags DecFileFlags = 0
 	// DecISMFlag tries to read mfra box at end to find segment boundaries (for ISM files)
-	DecISMFlag DecFileFlags = 1
+	DecISMFlag DecFileFlags = (1 << 0)
+	// DecStartOnMoof starts a segment at each moof boundary
+	// This is provided no styp, or sidx/mfra box gives other information
+	DecStartOnMoof = (1 << 1)
+	// if no styp box, or sidx/mfra strudture
 )
 
 // EncOptimize - encoder optimization mode
@@ -114,7 +118,7 @@ func ReadMP4File(path string) (*File, error) {
 
 	mp4Root, err := DecodeFile(f, WithDecodeFlags(DecISMFlag))
 	if err != nil {
-		return nil, err
+		return mp4Root, err
 	}
 	return mp4Root, nil
 }
@@ -142,6 +146,7 @@ func (f *File) AddMediaSegment(m *MediaSegment) {
 
 // DecodeFile - parse and decode a file from reader r with optional file options.
 // For example, the file options overwrite the default decode or encode mode.
+// On decode problems, the returned File may contain some top-level boxes, but not all.
 func DecodeFile(r io.Reader, options ...Option) (*File, error) {
 	f := NewFile()
 
@@ -163,7 +168,7 @@ func DecodeFile(r io.Reader, options ...Option) (*File, error) {
 	if (f.fileDecFlags & DecISMFlag) != 0 {
 		err := f.findAndReadMfra(r)
 		if err != nil {
-			return nil, fmt.Errorf("checkMfra: %w", err)
+			return f, fmt.Errorf("checkMfra: %w", err)
 		}
 	}
 
@@ -183,31 +188,45 @@ LoopBoxes:
 			break LoopBoxes
 		}
 		if err != nil {
-			return nil, err
+			return f, err
 		}
 		boxType, boxSize := box.Type(), box.Size()
 		switch boxType {
 		case "mdat":
 			if f.isFragmented {
 				if lastBoxType != "moof" {
-					return nil, fmt.Errorf("does not support %v between moof and mdat", lastBoxType)
+					return f, fmt.Errorf("does not support %v between moof and mdat", lastBoxType)
+				}
+			} else {
+				if f.Mdat != nil {
+					oldPayloadSize := f.Mdat.Size() - f.Mdat.HeaderSize()
+					newMdat := box.(*MdatBox)
+					newPayloadSize := newMdat.Size() - newMdat.HeaderSize()
+					if oldPayloadSize > 0 && newPayloadSize > 0 {
+						return f, fmt.Errorf("only one non-empty mdat box supported (payload sizes %d and %d)",
+							oldPayloadSize, newPayloadSize)
+					}
 				}
 			}
 		case "moof":
 			moof := box.(*MoofBox)
 			for _, traf := range moof.Trafs {
 				if ok, parsed := traf.ContainsSencBox(); ok && !parsed {
+					isEncrypted := true
 					defaultIVSize := byte(0) // Should get this from tenc in sinf
 					if f.Moov != nil {
 						trackID := traf.Tfhd.TrackID
+						isEncrypted = f.Moov.IsEncrypted(trackID)
 						sinf := f.Moov.GetSinf(trackID)
 						if sinf != nil && sinf.Schi != nil && sinf.Schi.Tenc != nil {
 							defaultIVSize = sinf.Schi.Tenc.DefaultPerSampleIVSize
 						}
 					}
-					err = traf.ParseReadSenc(defaultIVSize, moof.StartPos)
-					if err != nil {
-						return nil, err
+					if isEncrypted { // Don't do if encryption boxes still remain, but are not
+						err = traf.ParseReadSenc(defaultIVSize, moof.StartPos)
+						if err != nil {
+							return f, err
+						}
 					}
 				}
 			}
@@ -231,6 +250,10 @@ func (f *File) Size() uint64 {
 
 // AddChild - add child with start position
 func (f *File) AddChild(child Box, boxStartPos uint64) {
+	lastChildType := ""
+	if len(f.Children) > 0 {
+		lastChildType = f.Children[len(f.Children)-1].Type()
+	}
 	switch box := child.(type) {
 	case *FtypBox:
 		f.Ftyp = box
@@ -243,19 +266,27 @@ func (f *File) AddChild(child Box, boxStartPos uint64) {
 			f.Init.AddChild(f.Moov)
 		}
 	case *SidxBox:
-		// sidx boxes are either added to the File or to the current media segment.
+		// sidx boxes are either added to the File or to a later media segment.
 		// Since sidx boxes for a segment come before the moof, it is important that a new
 		// segment is started with a styp box for the sidx to be associated with the
-		// right segment.
+		// right segment. An alternative is that the sidx box is coming after
+		// an mdat box. This is the end of a fragment or segment, but since the sidx box
+		// should not be inside a segment, a new segment is started.
+		//
 		// A more general solution could possibly be implemented by looking at the
 		// sidx details like reference_ID to understand the sidx chain structure,
 		// and/or by waiting with associating the sidx box until more boxes are read.
 		// Given the rareness of multiple sidx boxes and the complexity of implementing
 		// and testing such a solution, that track is not deemed worth the effort for now.
-		if len(f.Segments) == 0 {
-			// Add sidx to top level until we know that a segment has started
+		switch {
+		case len(f.Segments) == 0 && lastChildType != "mdat":
 			f.AddSidx(box)
-		} else {
+		case lastChildType == "mdat":
+			// Start a new segment since we cannot have sidx later in a segment
+			f.isFragmented = true
+			f.AddMediaSegment(&MediaSegment{Styp: nil, StartPos: boxStartPos})
+			fallthrough
+		default:
 			currSeg := f.Segments[len(f.Segments)-1]
 			currSeg.AddSidx(box)
 		}
@@ -286,8 +317,10 @@ func (f *File) AddChild(child Box, boxStartPos uint64) {
 		frag := currSeg.LastFragment()
 		frag.AddChild(moof)
 	case *MdatBox:
-		if !f.isFragmented {
-			f.Mdat = box
+		if !f.isFragmented { // Only add if previous mdat is nil or empty
+			if f.Mdat == nil || f.Mdat.Size()-f.Mdat.HeaderSize() == 0 {
+				f.Mdat = box
+			}
 		} else {
 			currentFragment := f.LastSegment().LastFragment()
 			currentFragment.AddChild(box)
@@ -301,25 +334,33 @@ func (f *File) AddChild(child Box, boxStartPos uint64) {
 // startSegmentIfNeeded starts a new segment if there is none or if position match with sidx of tfra.
 func (f *File) startSegmentIfNeeded(b Box, boxStartPos uint64) {
 	segStart := false
-	idx := len(f.Segments)
+	segIdx := len(f.Segments)
 	switch {
 	case f.Sidx != nil:
-		startPos := f.Sidx.AnchorPoint
-		for i, ref := range f.Sidx.SidxRefs {
-			if i == idx {
-				if boxStartPos == startPos {
-					segStart = true
+		idx := 0
+	sidxLoop:
+		for _, sx := range f.Sidxs {
+			startPos := sx.AnchorPoint
+			for _, ref := range sx.SidxRefs {
+				if ref.ReferenceType == 1 {
+					continue sidxLoop
 				}
-				break
+				if boxStartPos == startPos && idx == segIdx {
+					segStart = true
+					break sidxLoop
+				}
+				startPos += uint64(ref.ReferencedSize)
+				idx++
 			}
-			startPos += uint64(ref.ReferencedSize)
 		}
 	case f.tfra != nil:
-		if boxStartPos == uint64(f.tfra.Entries[idx].MoofOffset) {
+		if boxStartPos == uint64(f.tfra.Entries[segIdx].MoofOffset) {
 			segStart = true
 		}
+	case (f.fileDecFlags & DecStartOnMoof) != 0:
+		segStart = true
 	default:
-		segStart = (idx == 0)
+		segStart = (segIdx == 0)
 	}
 	if segStart {
 		f.isFragmented = true
@@ -339,21 +380,15 @@ func (f *File) startSegmentIfNeeded(b Box, boxStartPos uint64) {
 func (f *File) findAndReadMfra(r io.Reader) error {
 	rs, ok := r.(io.ReadSeeker)
 	if !ok {
-		return fmt.Errorf("expecting readseeker when decoding file ISM file")
+		return fmt.Errorf("expecting readseeker when decoding ISM file")
 	}
 	mfroSize := int64(16) // This is the fixed size of the mfro box
 	pos, err := rs.Seek(-mfroSize, io.SeekEnd)
 	if err != nil {
 		return fmt.Errorf("could not seek %d bytes from end: %w", mfroSize, err)
 	}
-	b, err := DecodeBox(uint64(pos), rs) // mfro
+	mfro, err := TryDecodeMfro(uint64(pos), rs) // mfro
 	if err != nil {
-		// Not an mfro box here, just reset and return
-		_, err = rs.Seek(0, io.SeekStart)
-		return err
-	}
-	mfro, ok := b.(*MfroBox)
-	if !ok {
 		// Not an mfro box here, just reset and return
 		_, err = rs.Seek(0, io.SeekStart)
 		return err
@@ -363,7 +398,7 @@ func (f *File) findAndReadMfra(r io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("could not seek %d bytes from end: %w", mfraSize, err)
 	}
-	b, err = DecodeBox(uint64(pos), rs) // mfra
+	b, err := DecodeBox(uint64(pos), rs) // mfra
 	if err != nil {
 		return fmt.Errorf("could not decode mfra box: %w", err)
 	}
@@ -371,10 +406,20 @@ func (f *File) findAndReadMfra(r io.Reader) error {
 	if !ok {
 		return fmt.Errorf("expecting mfra box, but got %T", b)
 	}
-	if len(mfra.Tfras) != 1 {
-		return fmt.Errorf("only supports exactly one tfra in mfra")
+	f.tfra = mfra.Tfras[0]
+	for i := 1; i < len(mfra.Tfras); i++ {
+		if mfra.Tfras[i].TrackID == f.tfra.TrackID {
+			return fmt.Errorf("only one tfra box per trackID is supported")
+		}
+		if len(mfra.Tfras[i].Entries) != len(f.tfra.Entries) {
+			return fmt.Errorf("tfra boxes with different number of entries are not supported")
+		}
+		for j := 0; j < len(mfra.Tfras[i].Entries); j++ {
+			if mfra.Tfras[i].Entries[j].MoofOffset != f.tfra.Entries[j].MoofOffset {
+				return fmt.Errorf("tfra boxes with different moof offsets for different tracks are not supported")
+			}
+		}
 	}
-	f.tfra = mfra.Tfra
 	_, err = rs.Seek(0, io.SeekStart)
 	return err
 }
@@ -385,45 +430,6 @@ func (f *File) AddSidx(sidx *SidxBox) {
 		f.Sidx = sidx
 	}
 	f.Sidxs = append(f.Sidxs, sidx)
-}
-
-// DumpWithSampleData - print information about file and its children boxes
-func (f *File) DumpWithSampleData(w io.Writer, specificBoxLevels string) error {
-	if f.isFragmented {
-		fmt.Printf("Init segment\n")
-		err := f.Init.Info(w, specificBoxLevels, "", "  ")
-		if err != nil {
-			return err
-		}
-		for i, seg := range f.Segments {
-			fmt.Printf("  mediaSegment %d\n", i)
-			for j, frag := range seg.Fragments {
-				fmt.Printf("  fragment %d\n ", j)
-				w, err := os.OpenFile("tmp.264", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-				if err != nil {
-					return err
-				}
-				err = frag.DumpSampleData(w, f.Init.Moov.Mvex.Trex)
-				if err != nil {
-					w.Close()
-					return err
-				}
-				w.Close()
-			}
-		}
-
-	} else {
-		err := f.Ftyp.Info(w, specificBoxLevels, "", "  ")
-		if err != nil {
-			return err
-		}
-		err = f.Moov.Info(w, specificBoxLevels, "", "  ")
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // Encode - encode a file to a Writer
@@ -547,6 +553,9 @@ func (f *File) Info(w io.Writer, specificBoxLevels, indent, indentStep string) e
 
 // LastSegment - Currently last segment
 func (f *File) LastSegment() *MediaSegment {
+	if len(f.Segments) == 0 {
+		return nil
+	}
 	return f.Segments[len(f.Segments)-1]
 }
 
@@ -694,6 +703,160 @@ func (f *File) CopySampleData(w io.Writer, rs io.ReadSeeker, trak *TrakBox,
 			return fmt.Errorf("write error: %w", err)
 		}
 	}
+	return nil
+}
+
+func (f *File) UpdateSidx(addIfNotExists, nonZeroEPT bool) error {
+
+	if !f.IsFragmented() {
+		return fmt.Errorf("input file is not fragmented")
+	}
+
+	initSeg := f.Init
+	if initSeg == nil {
+		return fmt.Errorf("input file does not have an init segment")
+	}
+
+	segs := f.Segments
+	if len(segs) == 0 {
+		return fmt.Errorf("input file does not have any media segments")
+	}
+	exists := f.Sidx != nil
+	if !exists && !addIfNotExists {
+		return nil
+	}
+
+	refTrak := findReferenceTrak(initSeg)
+	trex, ok := initSeg.Moov.Mvex.GetTrex(refTrak.Tkhd.TrackID)
+	if !ok {
+		return fmt.Errorf("no trex box found for track %d", refTrak.Tkhd.TrackID)
+	}
+	segDatas, err := findSegmentData(segs, refTrak, trex)
+	if err != nil {
+		return fmt.Errorf("failed to find segment data: %w", err)
+	}
+
+	var sidx *SidxBox
+	if exists {
+		sidx = f.Sidx
+	} else {
+		sidx = &SidxBox{}
+	}
+	fillSidx(sidx, refTrak, segDatas, nonZeroEPT)
+	if !exists {
+		err = insertSidx(f, segDatas, sidx)
+		if err != nil {
+			return fmt.Errorf("failed to insert sidx box: %w", err)
+		}
+	}
+	return nil
+}
+
+func findReferenceTrak(initSeg *InitSegment) *TrakBox {
+	var trak *TrakBox
+	for _, trak = range initSeg.Moov.Traks {
+		if trak.Mdia.Hdlr.HandlerType == "vide" {
+			return trak
+		}
+	}
+	for _, trak = range initSeg.Moov.Traks {
+		if trak.Mdia.Hdlr.HandlerType == "soun" {
+			return trak
+		}
+	}
+	return initSeg.Moov.Traks[0]
+}
+
+type segData struct {
+	startPos         uint64
+	presentationTime uint64
+	baseDecodeTime   uint64
+	dur              uint32
+	size             uint32
+}
+
+// findSegmentData returns a slice of segment media data using a reference track.
+func findSegmentData(segs []*MediaSegment, refTrak *TrakBox, trex *TrexBox) ([]segData, error) {
+	segDatas := make([]segData, 0, len(segs))
+	for _, seg := range segs {
+		var firstCompositionTimeOffest int64
+		dur := uint32(0)
+		var baseTime uint64
+		for fIdx, frag := range seg.Fragments {
+			for _, traf := range frag.Moof.Trafs {
+				tfhd := traf.Tfhd
+				if tfhd.TrackID == refTrak.Tkhd.TrackID { // Find track that gives sidx time values
+					if fIdx == 0 {
+						baseTime = traf.Tfdt.BaseMediaDecodeTime()
+					}
+					for i, trun := range traf.Truns {
+						trun.AddSampleDefaultValues(tfhd, trex)
+						samples := trun.GetSamples()
+						for j, sample := range samples {
+							if fIdx == 0 && i == 0 && j == 0 {
+								firstCompositionTimeOffest = int64(sample.CompositionTimeOffset)
+							}
+							dur += sample.Dur
+						}
+					}
+				}
+			}
+		}
+		sd := segData{
+			startPos:         seg.StartPos,
+			presentationTime: uint64(int64(baseTime) + firstCompositionTimeOffest),
+			baseDecodeTime:   baseTime,
+			dur:              dur,
+			size:             uint32(seg.Size()),
+		}
+		segDatas = append(segDatas, sd)
+	}
+	return segDatas, nil
+}
+
+func fillSidx(sidx *SidxBox, refTrak *TrakBox, segDatas []segData, nonZeroEPT bool) {
+	ept := uint64(0)
+	if nonZeroEPT {
+		ept = segDatas[0].presentationTime
+	}
+	sidx.Version = 1
+	sidx.Timescale = refTrak.Mdia.Mdhd.Timescale
+	sidx.ReferenceID = 1
+	sidx.EarliestPresentationTime = ept
+	sidx.FirstOffset = 0
+	sidx.SidxRefs = make([]SidxRef, 0, len(segDatas))
+
+	for _, segData := range segDatas {
+		size := segData.size
+		sidx.SidxRefs = append(sidx.SidxRefs, SidxRef{
+			ReferencedSize:     size,
+			SubSegmentDuration: segData.dur,
+			StartsWithSAP:      1,
+			SAPType:            1,
+		})
+	}
+}
+
+func insertSidx(inFile *File, segDatas []segData, sidx *SidxBox) error {
+	// insert sidx box before first media segment
+	// TODO. Handle case where startPos is not reliable. Maybe first box of first segment
+	firstMediaBox, err := inFile.Segments[0].FirstBox()
+	if err != nil {
+		return fmt.Errorf("could not find position to insert sidx box: %w", err)
+	}
+	var mediaStartIdx = 0
+	for i, ch := range inFile.Children {
+		if ch == firstMediaBox {
+			mediaStartIdx = i
+			break
+		}
+	}
+	if mediaStartIdx == 0 {
+		return fmt.Errorf("could not find position to insert sidx box")
+	}
+	inFile.Children = append(inFile.Children[:mediaStartIdx], append([]Box{sidx}, inFile.Children[mediaStartIdx:]...)...)
+	inFile.Sidx = sidx
+	inFile.Sidxs = []*SidxBox{sidx}
 	return nil
 }
 

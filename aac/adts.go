@@ -24,11 +24,11 @@ type ADTSHeader struct {
 // NewADTSHeader - create a new ADTS header
 func NewADTSHeader(samplingFrequency int, channelConfig byte, objectType byte, plLen uint16) (*ADTSHeader, error) {
 	if objectType != AAClc {
-		return nil, fmt.Errorf("Must use AAC-LC (type 2) not %d", objectType)
+		return nil, fmt.Errorf("must use AAC-LC (type 2) not %d", objectType)
 	}
 	sfi, ok := ReverseFrequencies[samplingFrequency]
 	if !ok {
-		return nil, fmt.Errorf("Sampling frequency %d not supported", samplingFrequency)
+		return nil, fmt.Errorf("sampling frequency %d not supported", samplingFrequency)
 	}
 	return &ADTSHeader{
 		ObjectType:             objectType,
@@ -59,7 +59,7 @@ func (a ADTSHeader) Encode() []byte {
 
 // DecodeADTSHeader by first looking for sync word
 func DecodeADTSHeader(r io.Reader) (header *ADTSHeader, offset int, err error) {
-	br := bits.NewAccErrReader(r)
+	br := bits.NewReader(r)
 	tsPacketSize := 188 // Find sync 0xfff in first 188 bytes (MPEG-TS related)
 	syncFound := false
 	offset = 0
